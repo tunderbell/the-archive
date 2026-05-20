@@ -1,0 +1,61 @@
+# Gradle
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+!**/src/main/**/build/
+!**/src/test/**/build/
+
+# Eclipse / VS Code Java tooling output
+bin/
+.classpath
+.project
+.settings/
+.factorypath
+
+# IntelliJ
+.idea/
+*.iml
+*.iws
+*.ipr
+out/
+
+# VS Code (keep shared settings out of git by default)
+.vscode/
+
+# Compiled output
+*.class
+
+# Logs
+*.log
+logs/
+
+# Spring Boot
+*.original
+application-local.properties
+application-local.yml
+application-local.yaml
+
+# Local databases / data
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+
+# Personal notes / spec
+projectNotes/
+projectspec.md
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# Misc
+*.tmp
+*.swp
+*~

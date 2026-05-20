@@ -1,0 +1,12 @@
+﻿spring:
+  config:
+    activate:
+      on-profile: workspace
+  datasource:
+    url: jdbc:postgresql://your-server-ip:5432/archive_db
+    username: ${DB_USER}
+    password: ${DB_PASS}
+  jpa:
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
+server:
+  port: 61069

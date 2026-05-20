@@ -1,0 +1,15 @@
+﻿spring:
+  datasource:
+    # This creates a file named 'archive_vault.db' in your project root
+    url: jdbc:sqlite:archive_vault.db
+    driver-class-name: org.sqlite.JDBC
+  jpa:
+    hibernate:
+      # Automatically creates/updates your tables (Manga, Anime, etc.)
+      ddl-auto: update
+    # Uses the community dialect you added in your build.gradle.kts
+    database-platform: org.hibernate.community.dialect.SQLiteDialect
+    show-sql: true
+
+server:
+  port: 61069
