@@ -1,8 +1,6 @@
 package com.archive.domain.manga;
 
 import com.archive.core.model.BaseMedia;
-
-
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -11,25 +9,24 @@ import java.time.OffsetDateTime;
 import java.util.Set;
 
 @Entity
-@Table(name = "manga")
+@Table(name = "manga_deprecated")
 @Getter
 @Setter
 @NoArgsConstructor
-public class Manga extends BaseMedia {
+public class MangaDeprecated extends BaseMedia {
 
     private String author;
     private String artist;
 
+    @Enumerated(EnumType.STRING)
+    private MangaTypeDeprecated type;
 
     @Enumerated(EnumType.STRING)
-    private MangaType type;
-
-    @Enumerated(EnumType.STRING)
-    private MangaStatus status;
+    private MangaStatusDeprecated status;
 
     @ElementCollection
     @CollectionTable(
-        name = "manga_genres", 
+        name = "manga_genres_deprecated", 
         joinColumns = @JoinColumn(name = "manga_uuid") // Matches BaseMedia name = "uuid"
     )
     @Column(name = "genre")

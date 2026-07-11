@@ -1,6 +1,6 @@
 package com.archive.domain.manga;
 
-public enum MangaType {
+public enum MangaTypeDeprecated {
     MANGA,
     MANWHA,
     WEBTOON

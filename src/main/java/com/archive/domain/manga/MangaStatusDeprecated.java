@@ -1,6 +1,6 @@
 package com.archive.domain.manga;
 
-public enum MangaStatus {
+public enum MangaStatusDeprecated {
     COMPLETED,
     ONGOING,
     HIATUS,
