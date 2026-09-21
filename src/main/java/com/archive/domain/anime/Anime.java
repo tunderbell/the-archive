@@ -8,6 +8,8 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Set;
 
 @Entity
@@ -47,4 +49,19 @@ public class Anime extends BaseMedia{
     private String customEpisodeSelector;
     private String customVideoSelector;
     
+    @OneToMany(mappedBy = "anime", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+    @OrderBy("episodeNumber ASC")
+    private List<Episode> episodes = new ArrayList<>();
+
+    // Helper methods to maintain bidirectional relationship consistency
+    public void addEpisode(Episode episode) {
+        episodes.add(episode);
+        episode.setAnime(this);
+    }
+
+    public void removeEpisode(Episode episode) {
+        episodes.remove(episode);
+        episode.setAnime(null);
+    }
+
 }
