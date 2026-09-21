@@ -8,6 +8,8 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Set;
 
 @Entity
@@ -47,5 +49,20 @@ public class Manga extends BaseMedia {
     // CSS Selector Overrides (Area 4: User-Defined Scrapers)
     private String customImageSelector;
     private String customChapterSelector;
+
+    @OneToMany(mappedBy = "manga", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+    @OrderBy("chapterNumber ASC")
+    private List<Chapter> chapters = new ArrayList<>();
+
+    // Helper methods to maintain bidirectional relationship consistency
+    public void addChapter(Chapter chapter) {
+        chapters.add(chapter);
+        chapter.setManga(this);
+    }
+
+    public void removeChapter(Chapter chapter) {
+        chapters.remove(chapter);
+        chapter.setManga(null);
+    }
 
 }
