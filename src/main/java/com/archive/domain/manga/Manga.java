@@ -1,7 +1,7 @@
 package com.archive.domain.manga;
 
 import com.archive.core.model.BaseMedia;
-
+import com.archive.domain.manga.chapter.Chapter;
 
 import jakarta.persistence.*;
 import lombok.Getter;

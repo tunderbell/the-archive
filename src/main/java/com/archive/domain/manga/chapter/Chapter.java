@@ -1,5 +1,6 @@
-package com.archive.domain.manga;
+package com.archive.domain.manga.chapter;
 
+import com.archive.domain.manga.Manga;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;

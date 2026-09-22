@@ -1,4 +1,4 @@
-package com.archive.domain.anime;
+package com.archive.domain.anime.episode;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;

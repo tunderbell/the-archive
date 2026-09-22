@@ -1,5 +1,6 @@
-package com.archive.domain.anime;
+package com.archive.domain.anime.episode;
 
+import com.archive.domain.anime.Anime;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;

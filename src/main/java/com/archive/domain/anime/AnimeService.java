@@ -1,5 +1,7 @@
 package com.archive.domain.anime;
 
+import com.archive.domain.anime.episode.Episode;
+import com.archive.domain.anime.episode.EpisodeRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 

@@ -1,7 +1,7 @@
 package com.archive.domain.anime;
 
 import com.archive.core.model.BaseMedia;
-
+import com.archive.domain.anime.episode.Episode;
 
 import jakarta.persistence.*;
 import lombok.Getter;

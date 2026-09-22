@@ -1,5 +1,7 @@
 package com.archive.domain.manga;
 
+import com.archive.domain.manga.chapter.Chapter;
+import com.archive.domain.manga.chapter.ChapterRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
