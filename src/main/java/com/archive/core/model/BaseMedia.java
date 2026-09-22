@@ -7,7 +7,6 @@ import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
 import java.time.OffsetDateTime;
-import java.time.OffsetDateTime;
 import java.util.UUID;
 
 
@@ -48,5 +47,14 @@ public abstract class BaseMedia {
 
     // URL to the original source (e.g., webtoon.xyz)
     private String sourceUrl;
+
+    /**
+     * Remote or cached URL to the media's thumbnail or cover art.
+     * Mapped as TEXT in SQL to avoid VARCHAR(255) truncation on long CDN URLs,
+     * tokenized image links, or base64 data URI strings.
+     * Inherited by all media subclasses (Manga, Anime, Album, VideoGames).
+     */
+    @Column(name = "cover_image_url", columnDefinition = "TEXT")
+    private String coverImageUrl;
 
 }
