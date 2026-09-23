@@ -1,0 +1,411 @@
+{
+  "info": {
+    "_postman_id": "a3d9e2b3-55ca-4241-aa09-6c655beccdd7",
+    "name": "The Archive - Digital War Room API",
+    "description": "Comprehensive Postman collection for testing The Archive's REST API across Scraper Engine, Manga Catalog, Terminal CLI, Workspace Collaboration, and UI Layouts.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:61069",
+      "type": "string"
+    },
+    {
+      "key": "manga_id",
+      "value": "550e8400-e29b-41d4-a716-446655440000",
+      "type": "string"
+    },
+    {
+      "key": "chapter_id",
+      "value": "550e8400-e29b-41d4-a716-446655440001",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Terminal & APEX Commands",
+      "item": [
+        {
+          "name": "Execute Command (Status)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"command\": \"status\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/terminal/execute",
+              "host": ["{{base_url}}"],
+              "path": ["api", "terminal", "execute"]
+            },
+            "description": "Executes a synchronous CLI command (e.g. status, sys, help, list) and returns output."
+          }
+        },
+        {
+          "name": "Execute Command (Help)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"command\": \"help\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/terminal/execute",
+              "host": ["{{base_url}}"],
+              "path": ["api", "terminal", "execute"]
+            }
+          }
+        },
+        {
+          "name": "Create Custom Alias (Tier 1)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"command\": \"alias quick-sys=\\\"status\\\" --desc \\\"Quick status check\\\"\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/terminal/execute",
+              "host": ["{{base_url}}"],
+              "path": ["api", "terminal", "execute"]
+            }
+          }
+        },
+        {
+          "name": "List User Aliases",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"command\": \"aliases\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/terminal/execute",
+              "host": ["{{base_url}}"],
+              "path": ["api", "terminal", "execute"]
+            }
+          }
+        },
+        {
+          "name": "Execute Pipeline (Tier 2 '&&')",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"command\": \"status && help\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/terminal/execute",
+              "host": ["{{base_url}}"],
+              "path": ["api", "terminal", "execute"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Scraper Engine",
+      "item": [
+        {
+          "name": "Register Site Template (AsuraScans Recipe)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"domainName\": \"asurascans.com\",\n  \"name\": \"Asura Scans\",\n  \"titleSelector\": \"h1.entry-title\",\n  \"authorSelector\": \".author-content a\",\n  \"descriptionSelector\": \".entry-content p\",\n  \"coverImageSelector\": \".thumb img\",\n  \"chapterListSelector\": \"#chapterlist li a\",\n  \"chapterTitleSelector\": \".chapternum\",\n  \"imageSelector\": \"#readerarea img\",\n  \"rateLimitMs\": 1500,\n  \"requiresJs\": false\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/scraper/template",
+              "host": ["{{base_url}}"],
+              "path": ["api", "scraper", "template"]
+            }
+          }
+        },
+        {
+          "name": "List All Scraper Templates",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/scraper/template",
+              "host": ["{{base_url}}"],
+              "path": ["api", "scraper", "template"]
+            }
+          }
+        },
+        {
+          "name": "Get Template by Domain",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/scraper/template/asurascans.com",
+              "host": ["{{base_url}}"],
+              "path": ["api", "scraper", "template", "asurascans.com"]
+            }
+          }
+        },
+        {
+          "name": "Scout Series (Extract Chapters)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"url\": \"https://asurascans.com/manga/solo-leveling/\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/scraper/scout",
+              "host": ["{{base_url}}"],
+              "path": ["api", "scraper", "scout"]
+            }
+          }
+        },
+        {
+          "name": "Harvest Chapter Pages",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{base_url}}/api/scraper/harvest/{{chapter_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "scraper", "harvest", "{{chapter_id}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Manga & Media Catalog",
+      "item": [
+        {
+          "name": "List All Manga",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/manga",
+              "host": ["{{base_url}}"],
+              "path": ["api", "manga"]
+            }
+          }
+        },
+        {
+          "name": "Get Manga by ID",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/manga/{{manga_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "manga", "{{manga_id}}"]
+            }
+          }
+        },
+        {
+          "name": "Get Chapters for Manga",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/manga/{{manga_id}}/chapters",
+              "host": ["{{base_url}}"],
+              "path": ["api", "manga", "{{manga_id}}", "chapters"]
+            }
+          }
+        },
+        {
+          "name": "Create Manga Manually",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Chainsaw Man\",\n  \"author\": \"Tatsuki Fujimoto\",\n  \"status\": \"ONGOING\",\n  \"type\": \"MANGA\",\n  \"description\": \"Denji is a teenage boy living with a Chainsaw Devil named Pochita.\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/manga",
+              "host": ["{{base_url}}"],
+              "path": ["api", "manga"]
+            }
+          }
+        },
+        {
+          "name": "Delete Manga",
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "{{base_url}}/api/manga/{{manga_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "manga", "{{manga_id}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Workspace & Collaboration",
+      "item": [
+        {
+          "name": "Get Workspace Status",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/workspace/status",
+              "host": ["{{base_url}}"],
+              "path": ["api", "workspace", "status"]
+            }
+          }
+        },
+        {
+          "name": "Get Recent Activities",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/workspace/activities?limit=25",
+              "host": ["{{base_url}}"],
+              "path": ["api", "workspace", "activities"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "25"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Create Workspace Activity",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"actor\": \"Postman Tester\",\n  \"action\": \"API_TEST_EXECUTED\",\n  \"details\": \"Verified REST collection in Postman\",\n  \"mediaDomain\": \"MANGA\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/workspace/activities",
+              "host": ["{{base_url}}"],
+              "path": ["api", "workspace", "activities"]
+            }
+          }
+        },
+        {
+          "name": "Get Chat History",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/chat/history?channel=general&limit=50",
+              "host": ["{{base_url}}"],
+              "path": ["api", "chat", "history"],
+              "query": [
+                {
+                  "key": "channel",
+                  "value": "general"
+                },
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. UI & Dockview Layouts",
+      "item": [
+        {
+          "name": "Get Layout Preset (OPS)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/ui/layout/OPS",
+              "host": ["{{base_url}}"],
+              "path": ["api", "ui", "layout", "OPS"]
+            }
+          }
+        },
+        {
+          "name": "List All Saved Layouts",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/ui/layout",
+              "host": ["{{base_url}}"],
+              "path": ["api", "ui", "layout"]
+            }
+          }
+        },
+        {
+          "name": "Save Layout Preset (with Bottom Bar)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"OPS\",\n  \"json\": \"{\\\"grid\\\": {\\\"root\\\": {}}}\",\n  \"commandBarPosition\": \"BOTTOM\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/ui/layout",
+              "host": ["{{base_url}}"],
+              "path": ["api", "ui", "layout"]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

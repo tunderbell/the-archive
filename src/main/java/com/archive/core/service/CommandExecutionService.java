@@ -53,7 +53,7 @@ public class CommandExecutionService {
     private final SimpMessagingTemplate messagingTemplate;
 
     @Value("${spring.profiles.active:local}")
-    private String activeProfile;
+    private String activeProfile = "local";
 
     public CommandExecutionService(
             CommandParser parser,
@@ -236,14 +236,16 @@ public class CommandExecutionService {
     }
 
     private String handleStatus() {
-        int mangaCount = mangaService.getAllManga().size();
+        List<Manga> mangaList = mangaService.getAllManga();
+        int mangaCount = (mangaList != null) ? mangaList.size() : 0;
+        String profileName = (activeProfile != null) ? activeProfile.toUpperCase() : "LOCAL";
         return String.format("""
                 === THE ARCHIVE APEX STATUS ===
                 Active Profile  : %s
                 Catalog Titles  : %d Manga
                 Harvester Engine: Ready (Java 21 Virtual Threads)
                 STOMP Broker    : Online (/ws)
-                """, activeProfile.toUpperCase(), mangaCount);
+                """, profileName, mangaCount);
     }
 
     private String handleChat(Command cmd, String rawInput) {
