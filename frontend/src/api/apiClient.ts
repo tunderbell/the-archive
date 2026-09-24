@@ -27,12 +27,16 @@ export interface TerminalExecutionResponse {
 }
 
 export interface MediaItemDto {
-  id: number;
+  id: string;
+  category: string;
   title: string;
   creatorOrAuthor: string;
   status: string;
-  chapterOrEpisodeCount: number;
-  syncedWithWorkspace: boolean;
+  count: string;
+  visibility: string;
+  description?: string;
+  genres?: string[];
+  platforms?: string[];
 }
 
 export interface ActivityDto {
@@ -106,20 +110,106 @@ export const apiClient = {
       body: JSON.stringify({ command }),
     });
     if (!res.ok) throw new Error(`Command execution failed: ${res.statusText}`);
-    return res.json();
+    const data = await res.json();
+    return {
+      command: data.command || command,
+      output: data.output || '',
+      executionTimeMs: data.executionTimeMs ?? 0,
+      success: data.success ?? (!data.output?.startsWith('ERROR') && !data.output?.startsWith('[ERROR]') && !data.output?.startsWith('Unknown APEX command')),
+    };
   },
 
   /**
-   * Retrieves media vault entries for the high-density data buffer.
+   * Retrieves media vault entries for the high-density data buffer across all categories.
    */
-  async getMediaVault(type: 'manga' | 'anime' | 'music' | 'games'): Promise<MediaItemDto[]> {
+  async getMediaVault(type: 'all' | 'manga' | 'anime' | 'music' | 'games'): Promise<MediaItemDto[]> {
     try {
+      if (type === 'all') {
+        const [manga, anime, music, games] = await Promise.all([
+          fetch('/api/manga').then((r) => (r.ok ? r.json() : [])).catch(() => []),
+          fetch('/api/anime').then((r) => (r.ok ? r.json() : [])).catch(() => []),
+          fetch('/api/music').then((r) => (r.ok ? r.json() : [])).catch(() => []),
+          fetch('/api/games').then((r) => (r.ok ? r.json() : [])).catch(() => []),
+        ]);
+        return [
+          ...manga.map((m: any) => ({
+            id: m.id,
+            category: 'MANGA',
+            title: m.title,
+            creatorOrAuthor: m.author || m.artist || 'Unknown',
+            status: m.status || 'READING',
+            count: m.chapters ? `${m.chapters.length} ch` : '0 ch',
+            visibility: m.visibility || 'PRIVATE',
+            description: m.description,
+            genres: m.genres,
+          })),
+          ...anime.map((a: any) => ({
+            id: a.id,
+            category: 'ANIME',
+            title: a.title,
+            creatorOrAuthor: a.studio || a.director || 'Unknown',
+            status: a.status || 'FINISHED',
+            count: a.releaseYear ? `${a.releaseYear}` : 'TV',
+            visibility: a.visibility || 'PRIVATE',
+            description: a.description,
+            genres: a.genres,
+          })),
+          ...music.map((al: any) => ({
+            id: al.id,
+            category: 'MUSIC',
+            title: al.title,
+            creatorOrAuthor: al.artist || 'Unknown',
+            status: al.albumType || 'ALBUM',
+            count: al.releaseYear ? `${al.releaseYear}` : 'LP',
+            visibility: al.visibility || 'PRIVATE',
+            description: al.description,
+            genres: al.genres,
+          })),
+          ...games.map((g: any) => ({
+            id: g.id,
+            category: 'GAMES',
+            title: g.title,
+            creatorOrAuthor: g.developer || g.publisher || 'Unknown',
+            status: g.playStatus || 'PLAYING',
+            count: g.releaseYear ? `${g.releaseYear}` : 'PC',
+            visibility: g.visibility || 'PRIVATE',
+            description: g.description,
+            platforms: g.platforms,
+          })),
+        ];
+      }
+
       const res = await fetch(`/api/${type}`);
       if (!res.ok) return [];
-      return res.json();
+      const raw = await res.json();
+      return raw.map((item: any) => ({
+        id: item.id,
+        category: type.toUpperCase(),
+        title: item.title,
+        creatorOrAuthor: item.author || item.artist || item.studio || item.developer || 'Unknown',
+        status: item.status || item.playStatus || item.albumType || 'ACTIVE',
+        count: item.chapters ? `${item.chapters.length} ch` : item.releaseYear ? `${item.releaseYear}` : '1',
+        visibility: item.visibility || 'PRIVATE',
+        description: item.description,
+        genres: item.genres,
+        platforms: item.platforms,
+      }));
     } catch {
       return [];
     }
+  },
+
+  /**
+   * Scouts a target web URL using Jsoup to discover series title and chapters.
+   */
+  async scoutSeries(url: string): Promise<any> {
+    const res = await fetch('/api/scraper/scout', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url }),
+    });
+    if (!res.ok) throw new Error(`Scouting failed: ${res.statusText}`);
+    return res.json();
   },
 
   /**
@@ -146,5 +236,5 @@ export const apiClient = {
     } catch {
       return [];
     }
-  }
+  },
 };

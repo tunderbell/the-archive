@@ -31,7 +31,7 @@ public class CommandParser {
         // The first word is the action (e.g., add, list, delete)
         Command command = new Command(tokens.get(0));
 
-        // Parse the rest for flags (e.g., --title "Monster")
+        // Parse the rest for flags (e.g., --title "Monster") or positional arguments
         for (int i = 1; i < tokens.size(); i++) {
             String token = tokens.get(i);
 
@@ -46,6 +46,8 @@ public class CommandParser {
                     // It's a boolean flag (e.g., --adult)
                     command.addFlag(key, "true");
                 }
+            } else {
+                command.addArg(token);
             }
         }
 

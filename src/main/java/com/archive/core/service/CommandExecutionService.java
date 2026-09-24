@@ -128,20 +128,20 @@ public class CommandExecutionService {
         try {
             return switch (action) {
                 // Ingestion & Harvesting
-                case "scrape", "scrp" -> handleScrape(cmd);
-                case "harvest", "hrv" -> handleHarvest(cmd);
+                case "scrape", "scrp", "scrp.scout", "scout" -> handleScrape(cmd);
+                case "harvest", "hrv", "scrp.run", "run" -> handleHarvest(cmd);
                 
                 // Catalog & Content
-                case "list", "ls", "mng" -> handleList(cmd);
+                case "list", "ls", "mng", "mng.list" -> handleList(cmd);
                 
                 // Custom Command Management (Tier 1)
-                case "alias" -> handleAlias(cmd, rawInput);
+                case "alias", "custom.add" -> handleAlias(cmd, rawInput);
                 case "unalias" -> handleUnalias(cmd);
-                case "aliases" -> handleListAliases();
+                case "aliases", "custom.list" -> handleListAliases();
 
                 // Telemetry & Utility
-                case "status", "sys" -> handleStatus();
-                case "chat" -> handleChat(cmd, rawInput);
+                case "status", "sys", "sys.status" -> handleStatus();
+                case "chat", "ws.chat" -> handleChat(cmd, rawInput);
                 case "help", "man" -> handleHelp();
 
                 default -> "Unknown APEX command: [" + action + "]. Type 'help' for reference.";
@@ -154,7 +154,12 @@ public class CommandExecutionService {
 
     private String handleScrape(Command cmd) throws Exception {
         String url = cmd.getFlag("url");
-        if (url == null || url.isBlank()) return "Usage: scrape --url <series_url>";
+        if ((url == null || url.isBlank()) && !cmd.getArgs().isEmpty()) {
+            url = cmd.getArgs().get(0);
+        }
+        if (url == null || url.isBlank()) {
+            return "Usage: SCRP.SCOUT --url <series_url> OR SCRP.SCOUT <series_url>";
+        }
 
         streamTerminalLine("Scouting series metadata from: " + url + "...");
         Manga manga = scraperService.scoutAndRegisterSeries(url);
@@ -164,14 +169,53 @@ public class CommandExecutionService {
 
     private String handleHarvest(Command cmd) throws Exception {
         String chapterIdStr = cmd.getFlag("chapter");
-        if (chapterIdStr == null || chapterIdStr.isBlank()) {
-            return "Usage: harvest --chapter <chapter_uuid>";
+        String titleStr = cmd.getFlag("title");
+        String numberStr = cmd.getFlag("num");
+
+        if (chapterIdStr == null && !cmd.getArgs().isEmpty()) {
+            String firstArg = cmd.getArgs().get(0);
+            try {
+                // If the first argument is a UUID
+                UUID.fromString(firstArg);
+                chapterIdStr = firstArg;
+            } catch (IllegalArgumentException e) {
+                // Not a UUID, treat as series title search
+                titleStr = firstArg;
+                if (cmd.getArgs().size() > 1) {
+                    numberStr = cmd.getArgs().get(1);
+                }
+            }
         }
 
-        UUID chapterId = UUID.fromString(chapterIdStr);
-        streamTerminalLine("Initiating parallel harvest for chapter [" + chapterId + "]...");
-        Chapter chapter = scraperService.harvestChapter(chapterId);
-        return "✔ Successfully harvested Chapter " + chapter.getChapterNumber() + " (" + chapter.getPageCount() + " pages) -> " + chapter.getStoragePath();
+        if (chapterIdStr != null && !chapterIdStr.isBlank()) {
+            UUID chapterId = UUID.fromString(chapterIdStr);
+            streamTerminalLine("Initiating parallel harvest for chapter [" + chapterId + "]...");
+            Chapter chapter = scraperService.harvestChapter(chapterId);
+            return "✔ Successfully harvested Chapter " + chapter.getChapterNumber() + " (" + chapter.getPageCount() + " pages) -> " + chapter.getStoragePath();
+        }
+
+        if (titleStr != null && !titleStr.isBlank() && numberStr != null && !numberStr.isBlank()) {
+            String targetTitle = titleStr.toLowerCase().trim();
+            double targetNum = Double.parseDouble(numberStr);
+            List<Manga> all = mangaService.getAllManga();
+            Manga match = all.stream()
+                    .filter(m -> m.getTitle().toLowerCase().contains(targetTitle))
+                    .findFirst()
+                    .orElse(null);
+            if (match == null) {
+                return "ERROR: No title matching '" + titleStr + "' found in vault.";
+            }
+            Optional<Chapter> chOpt = chapterRepository.findByMangaIdAndChapterNumber(match.getId(), targetNum);
+            if (chOpt.isEmpty()) {
+                return "ERROR: Chapter " + numberStr + " not found for series '" + match.getTitle() + "'.";
+            }
+            Chapter chapter = chOpt.get();
+            streamTerminalLine("Initiating parallel harvest for " + match.getTitle() + " Ch. " + targetNum + " [" + chapter.getId() + "]...");
+            Chapter harvested = scraperService.harvestChapter(chapter.getId());
+            return "✔ Successfully harvested " + match.getTitle() + " Chapter " + harvested.getChapterNumber() + " (" + harvested.getPageCount() + " pages) -> " + harvested.getStoragePath();
+        }
+
+        return "Usage: SCRP.RUN --chapter <chapter_uuid> OR SCRP.RUN '<series_title>' <chapter_num>";
     }
 
     private String handleList(Command cmd) {
@@ -188,13 +232,20 @@ public class CommandExecutionService {
 
     private String handleAlias(Command cmd, String rawInput) {
         // Syntax: alias <name>="<template>" [--desc "description"]
+        // or:     CUSTOM.ADD <name>="<template>" [--desc "description"]
         int eqIndex = rawInput.indexOf('=');
         if (eqIndex == -1) {
-            return "Usage: alias <name>=\"<template>\" [--desc \"description\"]";
+            return "Usage: CUSTOM.ADD <name>=\"<template>\" [--desc \"description\"]";
         }
 
-        String namePart = rawInput.substring(5, eqIndex).trim();
-        String rest = rawInput.substring(eqIndex + 1).trim();
+        String cleaned = rawInput.replaceFirst("(?i)^(alias|custom\\.add)\\s+", "");
+        int cleanedEqIndex = cleaned.indexOf('=');
+        if (cleanedEqIndex == -1) {
+            return "Usage: CUSTOM.ADD <name>=\"<template>\" [--desc \"description\"]";
+        }
+
+        String namePart = cleaned.substring(0, cleanedEqIndex).trim();
+        String rest = cleaned.substring(cleanedEqIndex + 1).trim();
 
         // Extract template inside quotes
         String template;
@@ -249,8 +300,8 @@ public class CommandExecutionService {
     }
 
     private String handleChat(Command cmd, String rawInput) {
-        String text = rawInput.replaceFirst("(?i)^chat\\s+", "").trim();
-        if (text.isBlank()) return "Usage: chat <message text>";
+        String text = rawInput.replaceFirst("(?i)^(chat|ws\\.chat)\\s+", "").trim();
+        if (text.isBlank()) return "Usage: WS.CHAT <message text>";
         workspaceService.broadcastSystemAlert(text, "general");
         return "✔ Message broadcast to #general";
     }
@@ -258,15 +309,15 @@ public class CommandExecutionService {
     private String handleHelp() {
         return """
                 === APEX COMMAND REFERENCE ===
-                  SCRP / scrape   --url <url>                Scout & catalog a series
-                  HRV  / harvest  --chapter <uuid>           Harvest chapter images
-                  MNG  / list                                List stored titles
-                  SYS  / status                              System diagnostics
-                  alias <name>="<cmd>" [--desc "..."]        Create custom shortcut
-                  unalias --name <name>                      Remove custom shortcut
-                  aliases                                    List all user aliases
-                  chat <message>                             Broadcast to workspace chat
-                  cmd1 && cmd2                               Execute multi-step pipeline
+                  MNG.LIST / list                             List stored vault titles
+                  SYS.STATUS / status                         System telemetry & status
+                  SCRP.SCOUT / scrape    <url>                Scout & catalog a series
+                  SCRP.RUN / harvest     <chapter_uuid>       Harvest chapter images
+                  WS.CHAT / chat         <message>            Broadcast to workspace chat
+                  CUSTOM.ADD / alias     <name>="<cmd>"       Create custom alias/pipeline
+                  CUSTOM.LIST / aliases                       List registered aliases
+                  unalias                --name <name>        Remove custom alias
+                  cmd1 && cmd2                                Chained execution pipeline
                 """;
     }
 

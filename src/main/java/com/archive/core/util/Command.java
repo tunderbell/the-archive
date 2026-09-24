@@ -1,6 +1,8 @@
 package com.archive.core.util;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import lombok.Getter;
@@ -10,10 +12,10 @@ import lombok.ToString;
 @ToString
 public class Command {
 
-
     // DTO to hold the result of a parse
     private final String action;
     private final Map<String, String> flags = new HashMap<>();
+    private final List<String> args = new ArrayList<>();
 
     public Command(String action) {
         this.action = action.toLowerCase();
@@ -31,5 +33,11 @@ public class Command {
         return flags.containsKey(key.toLowerCase());
     }
 
-    
+    public void addArg(String arg) {
+        args.add(arg);
+    }
+
+    public List<String> getArgs() {
+        return args;
+    }
 }

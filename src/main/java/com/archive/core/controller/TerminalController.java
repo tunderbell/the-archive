@@ -12,13 +12,9 @@ import java.util.Map;
  * ============================================================================
  * CLASS: TerminalController
  * ============================================================================
- * WHAT IT DOES:
- * Exposes WebSocket and REST endpoints for the APEX Command Bar and Xterm.js terminal.
- *
- * WHY IT IS USED:
- * Provides two communication channels for executing commands:
- * 1. WebSocket (@MessageMapping) for live, streaming terminal sessions.
- * 2. REST (@PostMapping) for one-off command submissions from the command bar.
+ * Exposes WebSocket and REST endpoints for the APEX Command Bar and Terminal.
+ * Returns execution metrics (timeMs, success status) and supports both raw
+ * and JSON-wrapped command strings.
  * ============================================================================
  */
 @RestController
@@ -37,18 +33,52 @@ public class TerminalController {
      */
     @MessageMapping("/terminal.command")
     @SendTo("/topic/terminal.output")
-    public String handleWebSocketCommand(@Payload String commandLine) {
+    public String handleWebSocketCommand(@Payload String rawPayload) {
+        String commandLine = extractCommand(rawPayload);
         return executionService.execute(commandLine);
     }
 
     /**
      * REST endpoint for single-shot command execution via the APEX command bar.
-     * Example: POST /api/terminal/execute with JSON: {"command": "status"}
+     * Example: POST /api/terminal/execute with JSON: {"command": "MNG.LIST"}
      */
     @PostMapping("/api/terminal/execute")
-    public Map<String, String> handleRestCommand(@RequestBody Map<String, String> request) {
-        String input = request.getOrDefault("command", "help");
+    public Map<String, Object> handleRestCommand(@RequestBody Map<String, Object> request) {
+        long startTime = System.currentTimeMillis();
+        String input = String.valueOf(request.getOrDefault("command", "help"));
         String output = executionService.execute(input);
-        return Map.of("output", output);
+        long elapsedMs = System.currentTimeMillis() - startTime;
+
+        boolean success = !output.startsWith("ERROR") &&
+                          !output.startsWith("[ERROR]") &&
+                          !output.startsWith("Unknown APEX command");
+
+        return Map.of(
+            "command", input,
+            "output", output,
+            "executionTimeMs", elapsedMs,
+            "success", success
+        );
+    }
+
+    private String extractCommand(String rawPayload) {
+        if (rawPayload == null || rawPayload.trim().isEmpty()) {
+            return "help";
+        }
+        String trimmed = rawPayload.trim();
+        if (trimmed.startsWith("{") && trimmed.contains("\"command\"")) {
+            int keyIdx = trimmed.indexOf("\"command\"");
+            int colonIdx = trimmed.indexOf(':', keyIdx);
+            if (colonIdx != -1) {
+                int firstQuote = trimmed.indexOf('"', colonIdx + 1);
+                if (firstQuote != -1) {
+                    int secondQuote = trimmed.indexOf('"', firstQuote + 1);
+                    if (secondQuote != -1) {
+                        return trimmed.substring(firstQuote + 1, secondQuote).trim();
+                    }
+                }
+            }
+        }
+        return trimmed;
     }
 }
