@@ -15,7 +15,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { Search, Download, CheckCircle2, AlertCircle, Wrench, RefreshCw, Layers, Eye } from 'lucide-react';
+import { Search, Download, CheckCircle2, AlertCircle, Wrench, RefreshCw, Layers, Eye, MousePointer, X } from 'lucide-react';
 import { apiClient, TestSelectorResponse } from '../../api/apiClient';
 import { stompClient } from '../../api/stompClient';
 
@@ -57,9 +57,40 @@ export const ScraperMonitorBuffer: React.FC = () => {
   const [imageSelector, setImageSelector] = useState('div#readerarea img, div.w-full img');
   const [requiresJs, setRequiresJs] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
   const [testResults, setTestResults] = useState<TestSelectorResponse | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
   const [wizardStatus, setWizardStatus] = useState<{ text: string; error?: boolean } | null>(null);
+
+  // --- Visual DOM Inspector State ---
+  const [showLiveInspector, setShowLiveInspector] = useState(false);
+  const [inspectorFrameKey, setInspectorFrameKey] = useState(0);
+  const [selectedElementInfo, setSelectedElementInfo] = useState<{
+    selector: string;
+    tagName: string;
+    matchCount: number;
+    isImage: boolean;
+    isLink: boolean;
+    sampleText: string;
+  } | null>(null);
+
+  // Listen for point-and-click events sent by the proxy iframe
+  useEffect(() => {
+    const handleInspectorMessage = (event: MessageEvent) => {
+      if (event.data && event.data.type === 'APEX_INSPECTOR_ELEMENT_SELECTED') {
+        setSelectedElementInfo({
+          selector: event.data.selector,
+          tagName: event.data.tagName,
+          matchCount: event.data.matchCount,
+          isImage: event.data.isImage,
+          isLink: event.data.isLink,
+          sampleText: event.data.sampleText,
+        });
+      }
+    };
+
+    window.addEventListener('message', handleInspectorMessage);
+    return () => window.removeEventListener('message', handleInspectorMessage);
+  }, []);
 
   // Subscribe to live WebSocket scraper progress updates
   useEffect(() => {
@@ -522,7 +553,7 @@ export const ScraperMonitorBuffer: React.FC = () => {
           </div>
 
           {/* Action Buttons */}
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center space-x-2 flex-wrap gap-2">
             <button
               onClick={handleTestRecipe}
               disabled={isTesting}
@@ -530,6 +561,23 @@ export const ScraperMonitorBuffer: React.FC = () => {
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isTesting ? 'animate-spin' : ''}`} />
               <span>{isTesting ? 'TESTING SELECTORS...' : 'TEST RECIPE'}</span>
+            </button>
+
+            <button
+              onClick={() => {
+                setShowLiveInspector(!showLiveInspector);
+                if (!showLiveInspector) {
+                  setInspectorFrameKey((k) => k + 1);
+                }
+              }}
+              className={`apex-btn-secondary flex items-center space-x-1.5 py-1 px-3 ${
+                showLiveInspector
+                  ? 'bg-[#151b22] text-[#3898ec] border-[#3898ec]'
+                  : 'text-[#e2e8f0]'
+              }`}
+            >
+              <MousePointer className="w-3.5 h-3.5 text-[#3898ec]" />
+              <span>{showLiveInspector ? 'HIDE LIVE INSPECTOR' : 'OPEN LIVE VISUAL INSPECTOR'}</span>
             </button>
 
             <button
@@ -541,6 +589,96 @@ export const ScraperMonitorBuffer: React.FC = () => {
               <span>{isSaving ? 'SAVING...' : 'SAVE AS RECIPE'}</span>
             </button>
           </div>
+
+          {/* Live Visual DOM Inspector Viewport */}
+          {showLiveInspector && (
+            <div className="bg-[#0e1217] border border-[#3898ec] flex flex-col h-[560px] overflow-hidden space-y-2 p-2">
+              <div className="flex items-center justify-between border-b border-[#212832] pb-1.5">
+                <div className="flex items-center space-x-2">
+                  <MousePointer className="w-4 h-4 text-[#3898ec] animate-pulse" />
+                  <span className="font-bold text-[#3898ec] text-xs">LIVE TACTICAL DOM INSPECTOR</span>
+                  <span className="text-[10px] text-[#6b7a8d]">
+                    (Hover to highlight elements; click any element to inspect & assign)
+                  </span>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <button
+                    onClick={() => setInspectorFrameKey((k) => k + 1)}
+                    className="apex-btn-secondary px-2 py-0.5 text-[10px] flex items-center space-x-1"
+                    title="Reload Visual Sandbox"
+                  >
+                    <RefreshCw className="w-3 h-3" />
+                    <span>RELOAD</span>
+                  </button>
+                  <button
+                    onClick={() => setShowLiveInspector(false)}
+                    className="text-[#6b7a8d] hover:text-[#e2e8f0] p-1"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Clicked Element Quick-Assign HUD */}
+              {selectedElementInfo && (
+                <div className="bg-[#151b22] border border-[#f08c00] p-2 flex items-center justify-between flex-wrap gap-2 text-xs">
+                  <div className="flex items-center space-x-2">
+                    <span className="text-[#f08c00] font-bold">CLICKED:</span>
+                    <code className="text-[#3898ec] bg-[#0a0d11] px-1.5 py-0.5 border border-[#212832] font-mono font-bold">
+                      {selectedElementInfo.selector}
+                    </code>
+                    <span className="text-[#3fb950] text-[10px]">({selectedElementInfo.matchCount} matches)</span>
+                    {selectedElementInfo.sampleText && (
+                      <span className="text-[#8a95a5] text-[10px] italic truncate max-w-xs">
+                        "{selectedElementInfo.sampleText}"
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="flex items-center space-x-1.5">
+                    <button
+                      onClick={() => {
+                        setTitleSelector(selectedElementInfo.selector);
+                        setWizardStatus({ text: `✔ Assigned Title Selector: ${selectedElementInfo.selector}` });
+                      }}
+                      className="apex-btn-secondary text-[10px] py-1 px-2 hover:border-[#3898ec] text-[#3898ec]"
+                    >
+                      [SET AS TITLE]
+                    </button>
+                    <button
+                      onClick={() => {
+                        setChapterListSelector(selectedElementInfo.selector);
+                        setWizardStatus({ text: `✔ Assigned Chapter Selector: ${selectedElementInfo.selector}` });
+                      }}
+                      className="apex-btn-secondary text-[10px] py-1 px-2 hover:border-[#f08c00] text-[#f08c00]"
+                    >
+                      [SET AS CHAPTERS]
+                    </button>
+                    <button
+                      onClick={() => {
+                        setImageSelector(selectedElementInfo.selector);
+                        setWizardStatus({ text: `✔ Assigned Image Selector: ${selectedElementInfo.selector}` });
+                      }}
+                      className="apex-btn-secondary text-[10px] py-1 px-2 hover:border-[#3fb950] text-[#3fb950]"
+                    >
+                      [SET AS IMAGES]
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Sandboxed Interactive Frame */}
+              <div className="flex-1 bg-white relative rounded overflow-hidden">
+                <iframe
+                  key={inspectorFrameKey}
+                  src={`/api/scraper/live-inspect-proxy?url=${encodeURIComponent(wizardUrl)}`}
+                  title="Live Webpage Inspector"
+                  className="w-full h-full border-0"
+                  sandbox="allow-scripts allow-same-origin allow-forms"
+                />
+              </div>
+            </div>
+          )}
 
           {/* Diagnostic Results HUD */}
           {testResults && (

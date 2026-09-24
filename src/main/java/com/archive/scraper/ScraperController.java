@@ -98,4 +98,18 @@ public class ScraperController {
 
         return ResponseEntity.ok(scraperService.testSelectors(url, titleSelector, chapterListSelector, imageSelector, requiresJs));
     }
+
+    /**
+     * Proxies a target webpage with injected APEX visual inspector scripts
+     * for point-and-click selector discovery inside an iframe.
+     * Example: GET /api/scraper/live-inspect-proxy?url=https://asuracomic.net/...
+     */
+    @GetMapping(value = "/live-inspect-proxy", produces = "text/html;charset=UTF-8")
+    public ResponseEntity<String> liveInspectProxy(@RequestParam String url) {
+        try {
+            return ResponseEntity.ok(scraperService.generateLiveInspectHtml(url));
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body("<div style='background:#11161d;color:#f08c00;padding:20px;font-family:monospace;'>FAILED TO PROXY TARGET URL: " + e.getMessage() + "</div>");
+        }
+    }
 }

@@ -305,4 +305,158 @@ public class ScraperService {
     private String sanitizeFilename(String name) {
         return (name == null) ? "untitled" : name.replaceAll("[\\\\/:*?\"<>|]", "_").trim();
     }
+
+    /**
+     * Proxies a target webpage HTML, transforms all relative assets to absolute URLs,
+     * strips restrictive frame headers/meta tags, and injects the APEX Visual Inspector script.
+     */
+    public String generateLiveInspectHtml(String url) throws Exception {
+        Document doc = jsoupScraper.fetchDocument(url);
+
+        // Convert relative URLs to absolute so images, CSS, and fonts load correctly inside the proxy
+        for (Element e : doc.select("a[href]")) {
+            e.attr("href", e.attr("abs:href"));
+        }
+        for (Element e : doc.select("img[src]")) {
+            e.attr("src", e.attr("abs:src"));
+        }
+        for (Element e : doc.select("img[data-src]")) {
+            String abs = e.attr("abs:data-src");
+            e.attr("data-src", abs);
+            if (!e.hasAttr("src") || e.attr("src").isEmpty()) {
+                e.attr("src", abs);
+            }
+        }
+        for (Element e : doc.select("link[href]")) {
+            e.attr("href", e.attr("abs:href"));
+        }
+        for (Element e : doc.select("script[src]")) {
+            e.attr("src", e.attr("abs:src"));
+        }
+
+        // Remove any frame-busting scripts or restrictive meta tags
+        doc.select("meta[http-equiv=Content-Security-Policy]").remove();
+        doc.select("meta[http-equiv=X-Frame-Options]").remove();
+
+        // Inject the APEX Live Inspector Script & Styling
+        String inspectorScript = """
+            <style id="apex-inspector-styles">
+                .apex-highlight-hover {
+                    outline: 2px solid #3898ec !important;
+                    outline-offset: 2px !important;
+                    box-shadow: 0 0 10px rgba(56, 152, 236, 0.6) !important;
+                    cursor: crosshair !important;
+                }
+                #apex-selector-badge {
+                    position: fixed;
+                    background: #11161d;
+                    color: #3898ec;
+                    border: 1px solid #3898ec;
+                    font-family: monospace;
+                    font-size: 11px;
+                    font-weight: bold;
+                    padding: 3px 8px;
+                    z-index: 2147483647;
+                    pointer-events: none;
+                    display: none;
+                    box-shadow: 0 4px 12px rgba(0,0,0,0.8);
+                }
+            </style>
+            <div id="apex-selector-badge"></div>
+            <script id="apex-inspector-script">
+                (function() {
+                    let hoveredEl = null;
+                    const badge = document.getElementById('apex-selector-badge');
+
+                    function computeCleanSelector(el) {
+                        if (!el || el === document.body || el === document.documentElement) return 'body';
+                        if (el.id && !el.id.match(/\\d{4,}/)) return '#' + el.id;
+
+                        let tag = el.tagName.toLowerCase();
+                        if (el.className && typeof el.className === 'string') {
+                            const classes = el.className.trim().split(/\\s+/)
+                                .filter(c => c && !c.includes(':') && !c.startsWith('apex-') && c.length < 35);
+                            if (classes.length > 0) {
+                                tag += '.' + classes.slice(0, 2).join('.');
+                            }
+                        }
+
+                        if (el.parentElement && el.parentElement !== document.body) {
+                            let parentTag = el.parentElement.tagName.toLowerCase();
+                            if (el.parentElement.id && !el.parentElement.id.match(/\\d{4,}/)) {
+                                return '#' + el.parentElement.id + ' ' + tag;
+                            }
+                            if (el.parentElement.className && typeof el.parentElement.className === 'string') {
+                                const pClasses = el.parentElement.className.trim().split(/\\s+/)
+                                    .filter(c => c && !c.includes(':') && !c.startsWith('apex-') && c.length < 25);
+                                if (pClasses.length > 0) {
+                                    parentTag += '.' + pClasses[0];
+                                }
+                            }
+                            return parentTag + ' ' + tag;
+                        }
+                        return tag;
+                    }
+
+                    document.addEventListener('mouseover', function(e) {
+                        if (hoveredEl) {
+                            hoveredEl.classList.remove('apex-highlight-hover');
+                        }
+                        const target = e.target;
+                        if (!target || target === badge || target.id === 'apex-selector-badge') return;
+
+                        hoveredEl = target;
+                        hoveredEl.classList.add('apex-highlight-hover');
+
+                        const selector = computeCleanSelector(hoveredEl);
+                        const matchCount = document.querySelectorAll(selector).length;
+                        badge.textContent = selector + ' [' + matchCount + ' matches]';
+
+                        const rect = hoveredEl.getBoundingClientRect();
+                        badge.style.top = Math.max(5, rect.top - 26) + 'px';
+                        badge.style.left = Math.max(5, rect.left) + 'px';
+                        badge.style.display = 'block';
+                    }, true);
+
+                    document.addEventListener('mouseout', function(e) {
+                        if (hoveredEl) {
+                            hoveredEl.classList.remove('apex-highlight-hover');
+                        }
+                        badge.style.display = 'none';
+                    }, true);
+
+                    document.addEventListener('click', function(e) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        if (!hoveredEl) return;
+
+                        const selector = computeCleanSelector(hoveredEl);
+                        const matchCount = document.querySelectorAll(selector).length;
+                        const tag = hoveredEl.tagName.toLowerCase();
+                        const isImg = tag === 'img' || hoveredEl.querySelector('img') !== null;
+                        const isLink = tag === 'a' || hoveredEl.closest('a') !== null;
+                        const text = (hoveredEl.innerText || '').trim().slice(0, 80);
+
+                        window.parent.postMessage({
+                            type: 'APEX_INSPECTOR_ELEMENT_SELECTED',
+                            selector: selector,
+                            tagName: tag,
+                            matchCount: matchCount,
+                            isImage: isImg,
+                            isLink: isLink,
+                            sampleText: text
+                        }, '*');
+                    }, true);
+                })();
+            </script>
+            """;
+
+        if (doc.body() != null) {
+            doc.body().append(inspectorScript);
+        } else {
+            doc.append(inspectorScript);
+        }
+
+        return doc.outerHtml();
+    }
 }
