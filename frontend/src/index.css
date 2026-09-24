@@ -1,0 +1,184 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* -------------------------------------------------------------
+ * Global Viewport Dimensions
+ * ----------------------------------------------------------- */
+html, body, #root {
+  height: 100%;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background-color: #0a0d11;
+  color: #e2e8f0;
+}
+
+/* -------------------------------------------------------------
+ * APEX Console Custom Styling Tokens
+ * ----------------------------------------------------------- */
+:root {
+  --apex-bg-darkest: #0a0d11;
+  --apex-bg-surface: #11161d;
+  --apex-bg-header:  #151b22;
+  --apex-border:     #212832;
+  --apex-amber:      #f08c00;
+  --apex-cyan:       #3898ec;
+  --apex-green:      #3fb950;
+  --apex-muted:      #6b7a8d;
+  --apex-text:       #e2e8f0;
+}
+
+/* Custom Tactical Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #0a0d11;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #212832;
+  border-radius: 0px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #3898ec;
+}
+
+/* -------------------------------------------------------------
+ * Dockview Custom Theme Overrides: dockview-theme-apex
+ * ----------------------------------------------------------- */
+
+.dockview-theme-apex {
+  --dv-paneview-header-border-color: #212832;
+  --dv-separator-border: #212832;
+  --dv-tabs-and-actions-container-background-color: #151b22;
+  --dv-activegroup-visiblepanel-tab-background-color: #11161d;
+  --dv-inactivegroup-visiblepanel-tab-background-color: #0e1319;
+  --dv-tab-divider-color: #212832;
+  --dv-activegroup-hiddenpanel-tab-background-color: #151b22;
+  --dv-inactivegroup-hiddenpanel-tab-background-color: #12171e;
+  --dv-drag-over-background-color: rgba(240, 140, 0, 0.15);
+  --dv-drag-over-border-color: #f08c00;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.dockview-theme-apex .dockview-sash.vertical {
+  width: 4px;
+}
+
+.dockview-theme-apex .dockview-sash.horizontal {
+  height: 4px;
+}
+
+.dockview-theme-apex .dockview-sash:hover {
+  background-color: #3898ec !important;
+}
+
+/* Tab Header Text & Styling */
+.dockview-theme-apex .tab {
+  border-right: 1px solid #212832 !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.05em !important;
+  text-transform: uppercase !important;
+  padding: 0 10px !important;
+  height: 28px !important;
+}
+
+.dockview-theme-apex .tab.active-tab {
+  border-top: 2px solid #f08c00 !important;
+  color: #e2e8f0 !important;
+  background-color: #11161d !important;
+}
+
+.dockview-theme-apex .tab:not(.active-tab) {
+  color: #6b7a8d !important;
+  background-color: #151b22 !important;
+}
+
+.dockview-theme-apex .tab:hover:not(.active-tab) {
+  color: #d1d5db !important;
+}
+
+/* -------------------------------------------------------------
+ * Reusable APEX Component Utilities
+ * ----------------------------------------------------------- */
+
+/* Primary Action Button (Solid Amber) */
+.apex-btn-primary {
+  background-color: #f08c00;
+  color: #0a0d11;
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 700;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 3px 10px;
+  border: 1px solid #ff9900;
+  cursor: pointer;
+  transition: all 0.1s ease-in-out;
+}
+
+.apex-btn-primary:hover {
+  background-color: #ff9900;
+  box-shadow: 0 0 8px rgba(240, 140, 0, 0.4);
+}
+
+/* Secondary / Sub-Tab Button (Dark with 1px border) */
+.apex-btn-secondary {
+  background-color: #151b22;
+  color: #8b949e;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border: 1px solid #212832;
+  cursor: pointer;
+}
+
+.apex-btn-secondary:hover {
+  color: #e2e8f0;
+  border-color: #3898ec;
+}
+
+.apex-btn-secondary.active {
+  background-color: #212832;
+  color: #3898ec;
+  border-color: #3898ec;
+}
+
+/* Monospace Hairline Data Table */
+.apex-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+}
+
+.apex-table th {
+  background-color: #151b22;
+  color: #6b7a8d;
+  font-weight: 600;
+  text-transform: uppercase;
+  text-align: left;
+  padding: 4px 8px;
+  border-bottom: 1px solid #212832;
+  border-right: 1px solid #212832;
+}
+
+.apex-table td {
+  padding: 4px 8px;
+  border-bottom: 1px solid #1a2028;
+  border-right: 1px solid #1a2028;
+  color: #e2e8f0;
+}
+
+.apex-table tr:hover td {
+  background-color: rgba(56, 152, 236, 0.05);
+}

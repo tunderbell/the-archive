@@ -41,6 +41,7 @@ application-local.yaml
 *.sqlite3
 *.db-journal
 
+
 # Personal notes / spec
 projectNotes/
 projectspec.md
@@ -59,3 +60,10 @@ desktop.ini
 *.tmp
 *.swp
 *~
+
+# Node / Frontend Build Outputs & Dependencies
+**/node_modules/
+**/dist/
+frontend/node_modules/
+frontend/dist/
+
