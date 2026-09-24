@@ -83,4 +83,19 @@ public class ScraperController {
     public ResponseEntity<Chapter> harvestChapter(@PathVariable UUID chapterId) throws Exception {
         return ResponseEntity.ok(scraperService.harvestChapter(chapterId));
     }
+
+    /**
+     * Tests arbitrary CSS selectors against a live URL for the CSS Selector Wizard.
+     * Example: POST /api/scraper/test-selector
+     */
+    @PostMapping("/test-selector")
+    public ResponseEntity<Map<String, Object>> testSelectors(@RequestBody Map<String, Object> payload) throws Exception {
+        String url = String.valueOf(payload.get("url"));
+        String titleSelector = (String) payload.get("titleSelector");
+        String chapterListSelector = (String) payload.get("chapterListSelector");
+        String imageSelector = (String) payload.get("imageSelector");
+        boolean requiresJs = Boolean.parseBoolean(String.valueOf(payload.getOrDefault("requiresJs", "false")));
+
+        return ResponseEntity.ok(scraperService.testSelectors(url, titleSelector, chapterListSelector, imageSelector, requiresJs));
+    }
 }

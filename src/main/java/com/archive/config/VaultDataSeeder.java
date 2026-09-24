@@ -5,6 +5,8 @@ import com.archive.domain.anime.*;
 import com.archive.domain.manga.*;
 import com.archive.domain.music.*;
 import com.archive.domain.videogames.*;
+import com.archive.scraper.ScraperService;
+import com.archive.scraper.model.ScraperTemplate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.CommandLineRunner;
@@ -16,14 +18,9 @@ import java.util.Set;
  * ============================================================================
  * COMPONENT: VaultDataSeeder
  * ============================================================================
- * WHAT IT DOES:
  * Seeds initial demonstrative library records (Manga, Anime, Music, Video Games)
- * into the local SQLite vault (archive_vault.db) if the database has zero records.
- *
- * WHY IT IS USED:
- * Ensures that upon launching the APEX desktop console for the first time,
- * the user immediately experiences rich, high-density data tables in the
- * MEDIA.VAULT buffer rather than empty blank panes.
+ * and default Scraper site recipes into the local SQLite vault (archive_vault.db).
+ * Essentially test data
  * ============================================================================
  */
 @Component
@@ -35,15 +32,18 @@ public class VaultDataSeeder implements CommandLineRunner {
     private final AnimeService animeService;
     private final AlbumService albumService;
     private final GameService gameService;
+    private final ScraperService scraperService;
 
     public VaultDataSeeder(MangaService mangaService,
                            AnimeService animeService,
                            AlbumService albumService,
-                           GameService gameService) {
+                           GameService gameService,
+                           ScraperService scraperService) {
         this.mangaService = mangaService;
         this.animeService = animeService;
         this.albumService = albumService;
         this.gameService = gameService;
+        this.scraperService = scraperService;
     }
 
     @Override
@@ -52,6 +52,35 @@ public class VaultDataSeeder implements CommandLineRunner {
         seedAnimeIfEmpty();
         seedMusicIfEmpty();
         seedGamesIfEmpty();
+        seedTemplatesIfEmpty();
+    }
+
+    private void seedTemplatesIfEmpty() {
+        if (scraperService.getAllTemplates().isEmpty()) {
+            log.info("[VaultDataSeeder] Initializing default Scraper site recipes...");
+
+            ScraperTemplate t1 = new ScraperTemplate();
+            t1.setName("Asura Comic");
+            t1.setDomainName("asuracomic.net");
+            t1.setTitleSelector("span.text-xl, h1");
+            t1.setChapterListSelector("div.pl-4 a, #chapterlist a");
+            t1.setImageSelector("div#readerarea img, div.w-full img");
+            t1.setCoverImageSelector("img[alt='poster'], div.thumb img");
+            t1.setRequiresJs(false);
+            t1.setRateLimitMs(1000);
+            scraperService.saveTemplate(t1);
+
+            ScraperTemplate t2 = new ScraperTemplate();
+            t2.setName("Asura Scans");
+            t2.setDomainName("asurascans.com");
+            t2.setTitleSelector("h1.entry-title, .series-title");
+            t2.setChapterListSelector("#chapterlist li a");
+            t2.setImageSelector("#readerarea img, .page-break img");
+            t2.setCoverImageSelector(".thumb img");
+            t2.setRequiresJs(false);
+            t2.setRateLimitMs(1000);
+            scraperService.saveTemplate(t2);
+        }
     }
 
     private void seedMangaIfEmpty() {

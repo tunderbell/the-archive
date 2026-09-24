@@ -168,6 +168,13 @@ class ArchiveStompClient {
   }
 
   /**
+   * Subscribes to real-time scraper harvesting pipeline progress events.
+   */
+  public subscribeToScraperProgress(callback: MessageCallback) {
+    return this.safeSubscribe('/topic/scraper.progress', callback);
+  }
+
+  /**
    * Sends an interactive command over WebSocket to /app/terminal.command.
    */
   public sendTerminalCommand(command: string): void {

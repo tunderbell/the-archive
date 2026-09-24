@@ -10,9 +10,14 @@ import com.archive.scraper.model.ScraperTemplate;
 import com.archive.scraper.model.ScraperTemplateRepository;
 import com.archive.scraper.model.dto.ScrapedChapter;
 import com.archive.scraper.model.dto.ScrapedSeriesMetadata;
+import com.archive.workspace.service.WorkspaceService;
+import org.jsoup.nodes.Document;
+import org.jsoup.nodes.Element;
+import org.jsoup.select.Elements;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -21,6 +26,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -59,6 +65,8 @@ public class ScraperService {
     private final SeleniumHarvester seleniumHarvester;
     private final MangaService mangaService;
     private final ChapterRepository chapterRepository;
+    private final SimpMessagingTemplate messagingTemplate;
+    private final WorkspaceService workspaceService;
 
     @Value("${archive.storage.vault-path:./archive_vault}")
     private String vaultBasePath;
@@ -68,12 +76,16 @@ public class ScraperService {
             JsoupScraper jsoupScraper,
             SeleniumHarvester seleniumHarvester,
             MangaService mangaService,
-            ChapterRepository chapterRepository) {
+            ChapterRepository chapterRepository,
+            SimpMessagingTemplate messagingTemplate,
+            WorkspaceService workspaceService) {
         this.templateRepository = templateRepository;
         this.jsoupScraper = jsoupScraper;
         this.seleniumHarvester = seleniumHarvester;
         this.mangaService = mangaService;
         this.chapterRepository = chapterRepository;
+        this.messagingTemplate = messagingTemplate;
+        this.workspaceService = workspaceService;
     }
 
     /**
@@ -135,6 +147,8 @@ public class ScraperService {
         ScraperTemplate template = templateRepository.findByDomainName(domain)
                 .orElseThrow(() -> new IllegalArgumentException("No scraper template found for domain: " + domain));
 
+        broadcastProgress(chapterId, manga.getTitle(), chapter.getChapterNumber(), 10, "DOWNLOADING", 8);
+
         // Determine if images can be scraped via fast Jsoup or need dynamic Selenium
         List<String> imageUrls;
         if (!template.isRequiresJs()) {
@@ -149,13 +163,102 @@ public class ScraperService {
             imageUrls = seleniumHarvester.extractDynamicImageUrls(chapter.getSourceUrl(), template, manga.getCustomImageSelector());
         }
 
+        broadcastProgress(chapterId, manga.getTitle(), chapter.getChapterNumber(), 40, "DOWNLOADING", 8);
+
         // Construct target directory path: {vaultBasePath}/manga/{mangaTitle}/Chapter_{chapterNumber}
         String sanitizedTitle = sanitizeFilename(manga.getTitle());
         Path chapterDir = Paths.get(vaultBasePath, "manga", sanitizedTitle, "Chapter_" + chapter.getChapterNumber());
 
+        broadcastProgress(chapterId, manga.getTitle(), chapter.getChapterNumber(), 75, "DOWNLOADING", 8);
+
         int downloadedCount = seleniumHarvester.downloadPagesConcurrently(imageUrls, chapterDir);
 
-        return mangaService.markChapterDownloaded(chapterId, chapterDir.toAbsolutePath().toString(), downloadedCount);
+        broadcastProgress(chapterId, manga.getTitle(), chapter.getChapterNumber(), 95, "PACKAGING_CBZ", 1);
+
+        Chapter savedChapter = mangaService.markChapterDownloaded(chapterId, chapterDir.toAbsolutePath().toString(), downloadedCount);
+
+        broadcastProgress(chapterId, manga.getTitle(), chapter.getChapterNumber(), 100, "COMPLETED", 0);
+        workspaceService.recordActivity("HARVESTER", "CHAPTER_HARVESTED",
+                "Harvested " + manga.getTitle() + " Chapter " + chapter.getChapterNumber() + " (" + downloadedCount + " pages)",
+                "MANGA", manga.getId());
+
+        return savedChapter;
+    }
+
+    /**
+     * Executes arbitrary CSS selectors on a target URL to preview matches in the Wizard.
+     */
+    public Map<String, Object> testSelectors(
+            String url,
+            String titleSelector,
+            String chapterListSelector,
+            String imageSelector,
+            boolean requiresJs) throws Exception {
+
+        String domain = extractDomain(url);
+        Document doc = jsoupScraper.fetchDocument(url);
+
+        // Test Title
+        String matchedTitle = "None found";
+        if (titleSelector != null && !titleSelector.isBlank()) {
+            Element tElem = doc.selectFirst(titleSelector);
+            if (tElem != null) matchedTitle = tElem.text().trim();
+        }
+
+        // Test Chapter List
+        List<Map<String, String>> sampleChapters = new ArrayList<>();
+        int chapterCount = 0;
+        if (chapterListSelector != null && !chapterListSelector.isBlank()) {
+            Elements chLinks = doc.select(chapterListSelector);
+            chapterCount = chLinks.size();
+            for (int i = 0; i < Math.min(chLinks.size(), 5); i++) {
+                Element link = chLinks.get(i);
+                sampleChapters.add(Map.of(
+                        "title", link.text().trim(),
+                        "url", link.absUrl("href")
+                ));
+            }
+        }
+
+        // Test Images
+        List<String> sampleImages = new ArrayList<>();
+        int imageCount = 0;
+        if (imageSelector != null && !imageSelector.isBlank()) {
+            Elements imgs = doc.select(imageSelector);
+            imageCount = imgs.size();
+            for (Element img : imgs) {
+                String src = img.hasAttr("data-src") ? img.absUrl("data-src") : img.absUrl("src");
+                if (src != null && !src.isBlank() && !sampleImages.contains(src)) {
+                    sampleImages.add(src);
+                    if (sampleImages.size() >= 6) break;
+                }
+            }
+        }
+
+        return Map.of(
+                "domain", domain,
+                "url", url,
+                "title", matchedTitle,
+                "chapterCount", chapterCount,
+                "sampleChapters", sampleChapters,
+                "imageCount", imageCount,
+                "sampleImages", sampleImages
+        );
+    }
+
+    private void broadcastProgress(UUID chapterId, String title, Double chNum, int percent, String status, int threads) {
+        if (messagingTemplate != null) {
+            Map<String, Object> payload = Map.of(
+                    "jobId", "JOB-" + chapterId.toString().substring(0, 8).toUpperCase(),
+                    "chapterId", chapterId.toString(),
+                    "chapterNumber", chNum,
+                    "title", title + " Ch " + chNum,
+                    "progress", percent,
+                    "status", status,
+                    "threads", threads
+            );
+            messagingTemplate.convertAndSend("/topic/scraper.progress", (Object) payload);
+        }
     }
 
     // --- Template Management Operations ---

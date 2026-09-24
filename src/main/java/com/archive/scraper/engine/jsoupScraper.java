@@ -164,6 +164,19 @@ public class JsoupScraper {
     }
 
     /**
+     * Connects and fetches raw HTML Document for selector testing and diagnostics.
+     */
+    public Document fetchDocument(String url) throws IOException {
+        return Jsoup.connect(url)
+                .userAgent(DEFAULT_USER_AGENT)
+                .timeout(15_000)
+                .header("Accept-Language", "en-US,en;q=0.9")
+                .header("Referer", url)
+                .followRedirects(true)
+                .get();
+    }
+
+    /**
      * Internal helper to establish a polite, browser-mimicking HTTP connection via JSoup.
      */
     private Document connectAndFetch(String url, ScraperTemplate template) throws IOException {

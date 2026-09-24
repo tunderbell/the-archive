@@ -59,6 +59,31 @@ export interface ChatMessageDto {
   timestamp?: string;
 }
 
+export interface ScraperTemplateDto {
+  id?: string;
+  domainName: string;
+  name: string;
+  titleSelector: string;
+  authorSelector?: string;
+  descriptionSelector?: string;
+  coverImageSelector?: string;
+  chapterListSelector: string;
+  chapterTitleSelector?: string;
+  imageSelector: string;
+  requiresJs: boolean;
+  rateLimitMs?: number;
+}
+
+export interface TestSelectorResponse {
+  domain: string;
+  url: string;
+  title: string;
+  chapterCount: number;
+  sampleChapters: Array<{ title: string; url: string }>;
+  imageCount: number;
+  sampleImages: string[];
+}
+
 export const apiClient = {
   /**
    * Fetches all saved screen layouts from the backend database.
@@ -211,6 +236,62 @@ export const apiClient = {
       body: JSON.stringify({ url }),
     });
     if (!res.ok) throw new Error(`Scouting failed: ${res.statusText}`);
+    return res.json();
+  },
+
+  /**
+   * Tests arbitrary CSS selectors against a live URL for the Wizard.
+   */
+  async testSelector(payload: {
+    url: string;
+    titleSelector?: string;
+    chapterListSelector?: string;
+    imageSelector?: string;
+    requiresJs?: boolean;
+  }): Promise<TestSelectorResponse> {
+    const res = await fetch('/api/scraper/test-selector', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw new Error(`Selector test failed: ${res.statusText}`);
+    return res.json();
+  },
+
+  /**
+   * Triggers parallel harvest for a chapter entity by UUID.
+   */
+  async harvestChapter(chapterId: string): Promise<any> {
+    const res = await fetch(`/api/scraper/harvest/${encodeURIComponent(chapterId)}`, {
+      method: 'POST',
+    });
+    if (!res.ok) throw new Error(`Harvest failed: ${res.statusText}`);
+    return res.json();
+  },
+
+  /**
+   * Retrieves all registered site recipes from the backend.
+   */
+  async getAllTemplates(): Promise<ScraperTemplateDto[]> {
+    try {
+      const res = await fetch('/api/scraper/template');
+      if (!res.ok) return [];
+      return res.json();
+    } catch {
+      return [];
+    }
+  },
+
+  /**
+   * Saves or updates a site recipe template in the SQLite database.
+   */
+  async saveTemplate(template: ScraperTemplateDto): Promise<ScraperTemplateDto> {
+    const res = await fetch('/api/scraper/template', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(template),
+    });
+    if (!res.ok) throw new Error(`Failed to save template: ${res.statusText}`);
     return res.json();
   },
 
