@@ -66,6 +66,7 @@ export const ScraperMonitorBuffer: React.FC = () => {
   const [inspectorFrameKey, setInspectorFrameKey] = useState(0);
   const [selectedElementInfo, setSelectedElementInfo] = useState<{
     selector: string;
+    candidates?: string[];
     tagName: string;
     matchCount: number;
     isImage: boolean;
@@ -79,6 +80,7 @@ export const ScraperMonitorBuffer: React.FC = () => {
       if (event.data && event.data.type === 'APEX_INSPECTOR_ELEMENT_SELECTED') {
         setSelectedElementInfo({
           selector: event.data.selector,
+          candidates: event.data.candidates || [event.data.selector],
           tagName: event.data.tagName,
           matchCount: event.data.matchCount,
           isImage: event.data.isImage,
@@ -622,16 +624,37 @@ export const ScraperMonitorBuffer: React.FC = () => {
               {/* Clicked Element Quick-Assign HUD */}
               {selectedElementInfo && (
                 <div className="bg-[#151b22] border border-[#f08c00] p-2 flex items-center justify-between flex-wrap gap-2 text-xs">
-                  <div className="flex items-center space-x-2">
-                    <span className="text-[#f08c00] font-bold">CLICKED:</span>
-                    <code className="text-[#3898ec] bg-[#0a0d11] px-1.5 py-0.5 border border-[#212832] font-mono font-bold">
-                      {selectedElementInfo.selector}
-                    </code>
-                    <span className="text-[#3fb950] text-[10px]">({selectedElementInfo.matchCount} matches)</span>
-                    {selectedElementInfo.sampleText && (
-                      <span className="text-[#8a95a5] text-[10px] italic truncate max-w-xs">
-                        "{selectedElementInfo.sampleText}"
-                      </span>
+                  <div className="flex flex-col space-y-1.5">
+                    <div className="flex items-center space-x-2 flex-wrap gap-1">
+                      <span className="text-[#f08c00] font-bold">CLICKED:</span>
+                      <code className="text-[#3898ec] bg-[#0a0d11] px-1.5 py-0.5 border border-[#212832] font-mono font-bold">
+                        {selectedElementInfo.selector}
+                      </code>
+                      <span className="text-[#3fb950] text-[10px]">({selectedElementInfo.matchCount} matches)</span>
+                      {selectedElementInfo.sampleText && (
+                        <span className="text-[#8a95a5] text-[10px] italic truncate max-w-xs">
+                          "{selectedElementInfo.sampleText}"
+                        </span>
+                      )}
+                    </div>
+                    {/* Selectable Alternative Candidate Chips */}
+                    {selectedElementInfo.candidates && selectedElementInfo.candidates.length > 1 && (
+                      <div className="flex items-center space-x-1.5 flex-wrap gap-1 pt-0.5">
+                        <span className="text-[10px] text-[#6b7a8d] font-bold">OPTIONS:</span>
+                        {selectedElementInfo.candidates.map((cand, idx) => (
+                          <button
+                            key={idx}
+                            onClick={() => setSelectedElementInfo({ ...selectedElementInfo, selector: cand })}
+                            className={`px-1.5 py-0.5 text-[10px] font-mono border transition-colors ${
+                              selectedElementInfo.selector === cand
+                                ? 'border-[#3898ec] text-[#3898ec] bg-[#11161d] font-bold'
+                                : 'border-[#212832] text-[#8a95a5] hover:text-[#e2e8f0]'
+                            }`}
+                          >
+                            {cand}
+                          </button>
+                        ))}
+                      </div>
                     )}
                   </div>
 
@@ -692,6 +715,13 @@ export const ScraperMonitorBuffer: React.FC = () => {
                   <span className="text-[#3fb950]">✔ TITLE: {testResults.title}</span>
                   <span className="text-[#f08c00]">✔ CHAPTERS: {testResults.chapterCount}</span>
                   <span className="text-[#3898ec]">✔ IMAGES: {testResults.imageCount}</span>
+                  <button
+                    onClick={() => setTestResults(null)}
+                    className="text-[#6b7a8d] hover:text-[#e2e8f0] p-0.5 ml-2 cursor-pointer transition-colors"
+                    title="Close Diagnostic Report"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
                 </div>
               </div>
 

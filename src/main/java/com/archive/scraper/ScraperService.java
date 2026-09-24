@@ -220,17 +220,18 @@ public class ScraperService {
             }
         }
 
-        // Test Images
+        // Test Images (filtering out transparent spacers)
         List<String> sampleImages = new ArrayList<>();
         int imageCount = 0;
         if (imageSelector != null && !imageSelector.isBlank()) {
             Elements imgs = doc.select(imageSelector);
-            imageCount = imgs.size();
             for (Element img : imgs) {
-                String src = img.hasAttr("data-src") ? img.absUrl("data-src") : img.absUrl("src");
-                if (src != null && !src.isBlank() && !sampleImages.contains(src)) {
-                    sampleImages.add(src);
-                    if (sampleImages.size() >= 6) break;
+                String src = JsoupScraper.resolveImageSrc(img);
+                if (src != null) {
+                    imageCount++;
+                    if (!sampleImages.contains(src) && sampleImages.size() < 6) {
+                        sampleImages.add(src);
+                    }
                 }
             }
         }
@@ -264,9 +265,30 @@ public class ScraperService {
     // --- Template Management Operations ---
 
     /**
-     * Registers or updates a site recipe template in the database.
+     * Registers or updates a site recipe template in the database (Upsert).
      */
     public ScraperTemplate saveTemplate(ScraperTemplate template) {
+        if (template.getDomainName() != null) {
+            String domain = template.getDomainName().trim().toLowerCase();
+            template.setDomainName(domain);
+            Optional<ScraperTemplate> existingOpt = templateRepository.findByDomainName(domain);
+            if (existingOpt.isPresent()) {
+                ScraperTemplate existing = existingOpt.get();
+                if (template.getName() != null && !template.getName().isBlank()) {
+                    existing.setName(template.getName());
+                }
+                existing.setTitleSelector(template.getTitleSelector());
+                existing.setChapterListSelector(template.getChapterListSelector());
+                existing.setImageSelector(template.getImageSelector());
+                if (template.getAuthorSelector() != null) existing.setAuthorSelector(template.getAuthorSelector());
+                if (template.getDescriptionSelector() != null) existing.setDescriptionSelector(template.getDescriptionSelector());
+                if (template.getCoverImageSelector() != null) existing.setCoverImageSelector(template.getCoverImageSelector());
+                if (template.getChapterTitleSelector() != null) existing.setChapterTitleSelector(template.getChapterTitleSelector());
+                existing.setRequiresJs(template.isRequiresJs());
+                if (template.getRateLimitMs() > 0) existing.setRateLimitMs(template.getRateLimitMs());
+                return templateRepository.save(existing);
+            }
+        }
         return templateRepository.save(template);
     }
 
@@ -330,9 +352,8 @@ public class ScraperService {
         for (Element e : doc.select("link[href]")) {
             e.attr("href", e.attr("abs:href"));
         }
-        for (Element e : doc.select("script[src]")) {
-            e.attr("src", e.attr("abs:src"));
-        }
+        // Strip external scripts to prevent third-party ads, frame-busters, tracking, and SPA hydration crashes
+        doc.select("script").remove();
 
         // Remove any frame-busting scripts or restrictive meta tags
         doc.select("meta[http-equiv=Content-Security-Policy]").remove();
@@ -341,10 +362,13 @@ public class ScraperService {
         // Inject the APEX Live Inspector Script & Styling
         String inspectorScript = """
             <style id="apex-inspector-styles">
+                * {
+                    cursor: default !important;
+                }
                 .apex-highlight-hover {
                     outline: 2px solid #3898ec !important;
                     outline-offset: 2px !important;
-                    box-shadow: 0 0 10px rgba(56, 152, 236, 0.6) !important;
+                    box-shadow: 0 0 10px rgba(56, 152, 236, 0.7) !important;
                     cursor: crosshair !important;
                 }
                 #apex-selector-badge {
@@ -368,49 +392,94 @@ public class ScraperService {
                     let hoveredEl = null;
                     const badge = document.getElementById('apex-selector-badge');
 
-                    function computeCleanSelector(el) {
-                        if (!el || el === document.body || el === document.documentElement) return 'body';
-                        if (el.id && !el.id.match(/\\d{4,}/)) return '#' + el.id;
+                    function isValidCssIdent(s) {
+                        return typeof s === 'string' && /^[a-zA-Z_-][a-zA-Z0-9_-]*$/.test(s) && !s.startsWith('apex-') && s.length < 30;
+                    }
 
-                        let tag = el.tagName.toLowerCase();
+                    function safeQuery(sel) {
+                        if (!sel) return [];
+                        try {
+                            return document.querySelectorAll(sel);
+                        } catch (e) {
+                            return [];
+                        }
+                    }
+
+                    function computeCandidateSelectors(el) {
+                        if (!el || el === document.body || el === document.documentElement) return ['body'];
+                        const candidates = [];
+                        const tag = el.tagName.toLowerCase();
+
+                        // 1. Semantic uniqueness: If <h1> is unique on the page, it's the gold standard for title
+                        if (tag === 'h1' && safeQuery('h1').length === 1) {
+                            candidates.push('h1');
+                        }
+
+                        // 2. ID uniqueness (if clean and not autogenerated numbers)
+                        if (el.id && isValidCssIdent(el.id) && !el.id.match(/\\d{4,}/) && safeQuery('#' + el.id).length === 1) {
+                            candidates.push('#' + el.id);
+                        }
+
+                        // 3. Clean CSS class combinations (strictly alphanumeric + hyphens)
+                        let validClasses = [];
                         if (el.className && typeof el.className === 'string') {
-                            const classes = el.className.trim().split(/\\s+/)
-                                .filter(c => c && !c.includes(':') && !c.startsWith('apex-') && c.length < 35);
-                            if (classes.length > 0) {
-                                tag += '.' + classes.slice(0, 2).join('.');
+                            validClasses = el.className.trim().split(/\\s+/).filter(isValidCssIdent);
+                        }
+
+                        for (const c of validClasses.slice(0, 3)) {
+                            const sel = tag + '.' + c;
+                            if (safeQuery(sel).length > 0 && !candidates.includes(sel)) {
+                                candidates.push(sel);
                             }
                         }
 
-                        if (el.parentElement && el.parentElement !== document.body) {
-                            let parentTag = el.parentElement.tagName.toLowerCase();
-                            if (el.parentElement.id && !el.parentElement.id.match(/\\d{4,}/)) {
-                                return '#' + el.parentElement.id + ' ' + tag;
+                        if (validClasses.length >= 2) {
+                            const sel2 = tag + '.' + validClasses[0] + '.' + validClasses[1];
+                            if (safeQuery(sel2).length > 0 && !candidates.includes(sel2)) {
+                                candidates.push(sel2);
                             }
-                            if (el.parentElement.className && typeof el.parentElement.className === 'string') {
-                                const pClasses = el.parentElement.className.trim().split(/\\s+/)
-                                    .filter(c => c && !c.includes(':') && !c.startsWith('apex-') && c.length < 25);
-                                if (pClasses.length > 0) {
-                                    parentTag += '.' + pClasses[0];
+                        }
+
+                        if (!candidates.includes(tag)) {
+                            candidates.push(tag);
+                        }
+
+                        // 4. Hierarchical parent context for lists (chapters / images)
+                        if (el.parentElement && el.parentElement !== document.body && el.parentElement !== document.documentElement) {
+                            const p = el.parentElement;
+                            let pSel = '';
+                            if (p.id && isValidCssIdent(p.id) && !p.id.match(/\\d{4,}/)) {
+                                pSel = '#' + p.id;
+                            } else if (p.className && typeof p.className === 'string') {
+                                const pClasses = p.className.trim().split(/\\s+/).filter(isValidCssIdent);
+                                if (pClasses.length > 0) pSel = p.tagName.toLowerCase() + '.' + pClasses[0];
+                            }
+                            if (pSel) {
+                                const combined = pSel + ' ' + tag;
+                                if (safeQuery(combined).length > 0 && !candidates.includes(combined)) {
+                                    candidates.push(combined);
                                 }
                             }
-                            return parentTag + ' ' + tag;
                         }
-                        return tag;
+
+                        return candidates.length > 0 ? candidates : [tag];
                     }
 
                     document.addEventListener('mouseover', function(e) {
-                        if (hoveredEl) {
-                            hoveredEl.classList.remove('apex-highlight-hover');
-                        }
                         const target = e.target;
                         if (!target || target === badge || target.id === 'apex-selector-badge') return;
+
+                        if (hoveredEl && hoveredEl !== target) {
+                            hoveredEl.classList.remove('apex-highlight-hover');
+                        }
 
                         hoveredEl = target;
                         hoveredEl.classList.add('apex-highlight-hover');
 
-                        const selector = computeCleanSelector(hoveredEl);
-                        const matchCount = document.querySelectorAll(selector).length;
-                        badge.textContent = selector + ' [' + matchCount + ' matches]';
+                        const candidates = computeCandidateSelectors(hoveredEl);
+                        const primarySelector = candidates[0] || hoveredEl.tagName.toLowerCase();
+                        const matchCount = safeQuery(primarySelector).length;
+                        badge.textContent = primarySelector + ' [' + matchCount + ' matches]';
 
                         const rect = hoveredEl.getBoundingClientRect();
                         badge.style.top = Math.max(5, rect.top - 26) + 'px';
@@ -428,18 +497,21 @@ public class ScraperService {
                     document.addEventListener('click', function(e) {
                         e.preventDefault();
                         e.stopPropagation();
-                        if (!hoveredEl) return;
+                        const target = hoveredEl || e.target;
+                        if (!target) return;
 
-                        const selector = computeCleanSelector(hoveredEl);
-                        const matchCount = document.querySelectorAll(selector).length;
-                        const tag = hoveredEl.tagName.toLowerCase();
-                        const isImg = tag === 'img' || hoveredEl.querySelector('img') !== null;
-                        const isLink = tag === 'a' || hoveredEl.closest('a') !== null;
-                        const text = (hoveredEl.innerText || '').trim().slice(0, 80);
+                        const candidates = computeCandidateSelectors(target);
+                        const primarySelector = candidates[0] || target.tagName.toLowerCase();
+                        const matchCount = safeQuery(primarySelector).length;
+                        const tag = target.tagName.toLowerCase();
+                        const isImg = tag === 'img' || target.querySelector('img') !== null;
+                        const isLink = tag === 'a' || target.closest('a') !== null;
+                        const text = (target.innerText || '').trim().slice(0, 80);
 
                         window.parent.postMessage({
                             type: 'APEX_INSPECTOR_ELEMENT_SELECTED',
-                            selector: selector,
+                            selector: primarySelector,
+                            candidates: candidates,
                             tagName: tag,
                             matchCount: matchCount,
                             isImage: isImg,

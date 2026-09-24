@@ -141,6 +141,33 @@ public class JsoupScraper {
      * @return List of absolute image URLs in reading order.
      * @throws IOException If the connection fails.
      */
+    /**
+     * Resolves the real image source URL from an <img> element, filtering out
+     * 1x1 transparent spacer gifs and base64 tracking data-URIs.
+     */
+    public static String resolveImageSrc(Element img) {
+        String[] attrs = {"data-src", "data-lazy-src", "data-original", "src"};
+        for (String attr : attrs) {
+            if (img.hasAttr(attr)) {
+                String val = img.attr(attr).trim();
+                if (!val.isBlank() && !val.startsWith("data:image")) {
+                    String abs = img.absUrl(attr);
+                    if (abs != null && !abs.isBlank() && abs.startsWith("http")) {
+                        return abs;
+                    }
+                }
+            }
+        }
+        if (img.hasAttr("srcset")) {
+            String srcset = img.attr("srcset").trim();
+            if (!srcset.isBlank()) {
+                String firstUrl = srcset.split(",")[0].trim().split("\\s+")[0];
+                if (firstUrl.startsWith("http")) return firstUrl;
+            }
+        }
+        return null;
+    }
+
     public List<String> scrapeImageUrls(String chapterUrl, ScraperTemplate template, String customImageSelector) throws IOException {
         Document doc = connectAndFetch(chapterUrl, template);
 
@@ -153,8 +180,8 @@ public class JsoupScraper {
         List<String> imageUrls = new ArrayList<>();
 
         for (Element img : imgElements) {
-            String src = img.hasAttr("data-src") ? img.absUrl("data-src") : img.absUrl("src");
-            if (src != null && !src.isBlank() && !imageUrls.contains(src)) {
+            String src = resolveImageSrc(img);
+            if (src != null && !imageUrls.contains(src)) {
                 imageUrls.add(src);
             }
         }
