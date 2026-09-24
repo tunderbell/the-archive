@@ -37,12 +37,12 @@ export const SystemLogBuffer: React.FC = () => {
       try {
         const activities: ActivityDto[] = await apiClient.getActivities();
         if (activities && activities.length > 0) {
-          const mapped: LogEntry[] = activities.map((a) => ({
+          const mapped: LogEntry[] = activities.map((a: any) => ({
             id: `act-${a.id}`,
-            timestamp: new Date(a.timestamp).toLocaleTimeString(),
-            level: 'INFO',
-            source: a.entityType || 'SYS',
-            message: `${a.username}: ${a.action} - ${a.details}`,
+            timestamp: a.timestamp ? new Date(a.timestamp).toLocaleTimeString() : new Date().toLocaleTimeString(),
+            level: a.action?.includes('ERROR') ? 'WARN' : a.action?.includes('ARCHIVE') ? 'SUCCESS' : 'INFO',
+            source: a.mediaDomain || a.entityType || a.actor || 'SYS',
+            message: `${a.actor || a.username || 'SYS'}: ${a.action} - ${a.details}`,
           }));
           setLogs(mapped);
         } else {
@@ -63,8 +63,22 @@ export const SystemLogBuffer: React.FC = () => {
     }
     loadPastActivities();
 
+    // Subscribe to real-time workspace activities
+    const actSub = stompClient.subscribeToActivities((activity: any) => {
+      setLogs((prev) => [
+        ...prev,
+        {
+          id: `act-live-${Date.now()}-${Math.random()}`,
+          timestamp: new Date().toLocaleTimeString(),
+          level: activity.action?.includes('ERROR') ? 'WARN' : activity.action?.includes('ARCHIVE') ? 'SUCCESS' : 'INFO',
+          source: activity.mediaDomain || activity.actor || 'SYS',
+          message: `${activity.actor || 'SYS'}: ${activity.action} - ${activity.details}`,
+        },
+      ]);
+    });
+
     // Subscribe to real-time terminal output stream to append to logs
-    const sub = stompClient.subscribeToTerminal((payload) => {
+    const termSub = stompClient.subscribeToTerminal((payload) => {
       const outputStr = typeof payload === 'string' ? payload : payload.output || JSON.stringify(payload);
       setLogs((prev) => [
         ...prev,
@@ -80,7 +94,8 @@ export const SystemLogBuffer: React.FC = () => {
 
     return () => {
       try {
-        sub.unsubscribe();
+        actSub.unsubscribe();
+        termSub.unsubscribe();
       } catch {}
     };
   }, []);

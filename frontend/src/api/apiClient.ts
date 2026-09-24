@@ -40,20 +40,22 @@ export interface MediaItemDto {
 }
 
 export interface ActivityDto {
-  id: number;
-  username: string;
+  id: string | number;
+  actor?: string;
+  username?: string;
   action: string;
-  entityType: string;
+  mediaDomain?: string;
+  entityType?: string;
   details: string;
   timestamp: string;
 }
 
 export interface ChatMessageDto {
-  id?: number;
+  id?: number | string;
   roomId: string;
   sender: string;
   content: string;
-  type: 'CHAT' | 'JOIN' | 'LEAVE' | 'SYSTEM';
+  type: 'CHAT' | 'JOIN' | 'LEAVE' | 'SYSTEM' | 'SYSTEM_ALERT';
   timestamp?: string;
 }
 
@@ -103,11 +105,11 @@ export const apiClient = {
   /**
    * Dispatches a raw APEX command string to the backend CLI execution engine.
    */
-  async executeCommand(command: string): Promise<TerminalExecutionResponse> {
+  async executeCommand(command: string, source: 'BAR' | 'TERM' = 'BAR'): Promise<TerminalExecutionResponse> {
     const res = await fetch('/api/terminal/execute', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ command }),
+      body: JSON.stringify({ command, source }),
     });
     if (!res.ok) throw new Error(`Command execution failed: ${res.statusText}`);
     const data = await res.json();
@@ -232,7 +234,15 @@ export const apiClient = {
     try {
       const res = await fetch(`/api/chat/history/${encodeURIComponent(roomId)}`);
       if (!res.ok) return [];
-      return res.json();
+      const data = await res.json();
+      return data.map((m: any) => ({
+        id: m.id,
+        roomId: m.channel || m.roomId || 'global',
+        sender: m.sender,
+        content: m.content,
+        type: m.messageType || m.type || 'CHAT',
+        timestamp: m.timestamp ? new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : undefined,
+      }));
     } catch {
       return [];
     }

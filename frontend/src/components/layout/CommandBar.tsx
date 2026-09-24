@@ -66,7 +66,7 @@ export const CommandBar: React.FC = () => {
     if (!trimmed) return;
 
     try {
-      const res = await apiClient.executeCommand(trimmed);
+      const res = await apiClient.executeCommand(trimmed, 'BAR');
       setExecutionResult({ success: res.success, timeMs: res.executionTimeMs });
       setCommandInput('');
       setSuggestions([]);

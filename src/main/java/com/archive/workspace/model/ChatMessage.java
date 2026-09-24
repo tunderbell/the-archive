@@ -78,4 +78,25 @@ public class ChatMessage {
         msg.setMessageType(MessageType.SYSTEM_ALERT);
         return msg;
     }
+
+    // Compatibility helpers for JSON serialization across React & Spring
+    public String getRoomId() {
+        return channel;
+    }
+
+    public void setRoomId(String roomId) {
+        if (roomId != null && !roomId.isBlank()) {
+            this.channel = roomId;
+        }
+    }
+
+    public MessageType getType() {
+        return messageType;
+    }
+
+    public void setType(MessageType type) {
+        if (type != null) {
+            this.messageType = type;
+        }
+    }
 }

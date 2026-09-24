@@ -4,6 +4,7 @@ import com.archive.core.service.CommandExecutionService;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.handler.annotation.Payload;
 import org.springframework.messaging.handler.annotation.SendTo;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
@@ -21,9 +22,11 @@ import java.util.Map;
 public class TerminalController {
 
     private final CommandExecutionService executionService;
+    private final SimpMessagingTemplate messagingTemplate;
 
-    public TerminalController(CommandExecutionService executionService) {
+    public TerminalController(CommandExecutionService executionService, SimpMessagingTemplate messagingTemplate) {
         this.executionService = executionService;
+        this.messagingTemplate = messagingTemplate;
     }
 
     /**
@@ -40,18 +43,29 @@ public class TerminalController {
 
     /**
      * REST endpoint for single-shot command execution via the APEX command bar.
-     * Example: POST /api/terminal/execute with JSON: {"command": "MNG.LIST"}
+     * Example: POST /api/terminal/execute with JSON: {"command": "MNG.LIST", "source": "BAR"}
      */
     @PostMapping("/api/terminal/execute")
     public Map<String, Object> handleRestCommand(@RequestBody Map<String, Object> request) {
         long startTime = System.currentTimeMillis();
         String input = String.valueOf(request.getOrDefault("command", "help"));
+        String source = String.valueOf(request.getOrDefault("source", "BAR"));
         String output = executionService.execute(input);
         long elapsedMs = System.currentTimeMillis() - startTime;
 
         boolean success = !output.startsWith("ERROR") &&
                           !output.startsWith("[ERROR]") &&
                           !output.startsWith("Unknown APEX command");
+
+        // Cockpit Echo: If triggered from the APEX Command Bar, broadcast to open terminal tiles
+        if ("BAR".equalsIgnoreCase(source)) {
+            Map<String, Object> echoPayload = Map.of(
+                "source", "BAR",
+                "command", input,
+                "output", output
+            );
+            messagingTemplate.convertAndSend("/topic/terminal.output", (Object) echoPayload);
+        }
 
         return Map.of(
             "command", input,

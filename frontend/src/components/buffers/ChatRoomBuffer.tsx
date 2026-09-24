@@ -38,8 +38,27 @@ export const ChatRoomBuffer: React.FC = () => {
     }
     loadHistory();
 
-    const sub = stompClient.subscribeToChatRoom('global', (incoming: ChatMessageDto) => {
-      setMessages((prev) => [...prev, incoming]);
+    const sub = stompClient.subscribeToChatRoom('global', (incoming: any) => {
+      const normalized: ChatMessageDto = {
+        id: incoming.id,
+        roomId: incoming.channel || incoming.roomId || 'global',
+        sender: incoming.sender,
+        content: incoming.content,
+        type: incoming.messageType || incoming.type || 'CHAT',
+        timestamp: incoming.timestamp
+          ? new Date(incoming.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+          : new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      };
+
+      setMessages((prev) => {
+        if (incoming.id && prev.some((m) => m.id === incoming.id)) return prev;
+        // Replace optimistic local message with server-persisted message
+        const last = prev[prev.length - 1];
+        if (last && last.sender === normalized.sender && last.content === normalized.content && !last.id) {
+          return [...prev.slice(0, -1), normalized];
+        }
+        return [...prev, normalized];
+      });
     });
 
     return () => {

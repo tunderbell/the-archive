@@ -34,9 +34,26 @@ export const TerminalBuffer: React.FC = () => {
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Subscribe to real-time STOMP terminal stream
+  // Subscribe to real-time STOMP terminal stream (including Command Bar echo)
   useEffect(() => {
     const sub = stompClient.subscribeToTerminal((payload) => {
+      if (typeof payload === 'object' && payload !== null && payload.source === 'BAR') {
+        setLines((prev) => [
+          ...prev,
+          {
+            id: `bar-in-${Date.now()}`,
+            type: 'input',
+            text: `[APEX BAR] > ${payload.command}`,
+          },
+          {
+            id: `bar-out-${Date.now()}`,
+            type: 'output',
+            text: payload.output,
+          },
+        ]);
+        return;
+      }
+
       const outputText = typeof payload === 'string' ? payload : payload.output || JSON.stringify(payload);
       setLines((prev) => [
         ...prev,
@@ -99,7 +116,7 @@ export const TerminalBuffer: React.FC = () => {
 
       // Dispatch to backend CLI engine
       try {
-        const res = await apiClient.executeCommand(trimmed);
+        const res = await apiClient.executeCommand(trimmed, 'TERM');
         setLines((prev) => [
           ...prev,
           {

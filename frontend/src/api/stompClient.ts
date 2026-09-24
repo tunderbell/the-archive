@@ -161,6 +161,13 @@ class ArchiveStompClient {
   }
 
   /**
+   * Subscribes to real-time workspace activity audit log events.
+   */
+  public subscribeToActivities(callback: MessageCallback) {
+    return this.safeSubscribe('/topic/workspace.activity', callback);
+  }
+
+  /**
    * Sends an interactive command over WebSocket to /app/terminal.command.
    */
   public sendTerminalCommand(command: string): void {
