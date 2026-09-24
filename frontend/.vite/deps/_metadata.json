@@ -5,4 +5,4 @@
   "browserHash": "cf0a0ec2",
   "optimized": {},
   "chunks": {}
-}
+}The Java compiler, `javac`, transforms `.java` source code into `.class` bytecode, integrating Lombok's annotation processing during this stage. The requireme... 

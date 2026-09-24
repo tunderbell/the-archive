@@ -1,10 +1,15 @@
 package com.archive.domain.manga;
 
 import com.archive.domain.manga.chapter.Chapter;
+import com.archive.domain.manga.chapter.dto.ChapterPagesDto;
+import org.springframework.core.io.Resource;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.io.IOException;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -74,5 +79,48 @@ public class MangaController {
     public ResponseEntity<Void> deleteManga(@PathVariable UUID id) {
         mangaService.deleteManga(id);
         return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * Retrieves chapter pages and metadata for the in-app Reader Buffer.
+     * Example: GET /api/manga/chapters/{chapterId}/pages
+     */
+    @GetMapping("/chapters/{chapterId}/pages")
+    public ResponseEntity<ChapterPagesDto> getChapterPages(@PathVariable UUID chapterId) {
+        return ResponseEntity.ok(mangaService.getChapterPages(chapterId));
+    }
+
+    /**
+     * Streams an individual page image binary to the browser.
+     * Example: GET /api/manga/chapters/{chapterId}/pages/{filename}
+     */
+    @GetMapping("/chapters/{chapterId}/pages/{filename:.+}")
+    public ResponseEntity<Resource> getChapterPageImage(
+            @PathVariable UUID chapterId,
+            @PathVariable String filename) {
+        Resource resource = mangaService.getChapterPageResource(chapterId, filename);
+        String contentType = determineContentType(filename);
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_TYPE, contentType)
+                .header(HttpHeaders.CACHE_CONTROL, "public, max-age=86400")
+                .body(resource);
+    }
+
+    /**
+     * Launches the default operating system file viewer / CBZ reader targeting the chapter.
+     * Example: POST /api/manga/chapters/{chapterId}/open-external
+     */
+    @PostMapping("/chapters/{chapterId}/open-external")
+    public ResponseEntity<Map<String, Object>> openExternalViewer(@PathVariable UUID chapterId) throws IOException {
+        mangaService.openInExternalViewer(chapterId);
+        return ResponseEntity.ok(Map.of("status", "SUCCESS", "message", "Opened in system viewer"));
+    }
+
+    private String determineContentType(String filename) {
+        String lower = filename.toLowerCase();
+        if (lower.endsWith(".png")) return "image/png";
+        if (lower.endsWith(".webp")) return "image/webp";
+        if (lower.endsWith(".gif")) return "image/gif";
+        return "image/jpeg";
     }
 }

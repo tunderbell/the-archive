@@ -11,15 +11,22 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { apiClient, MediaItemDto } from '../../api/apiClient';
-import { Search, RefreshCw, Eye, X } from 'lucide-react';
+import { apiClient, MediaItemDto, ChapterDto } from '../../api/apiClient';
+import { useScreens } from '../../context/ScreenContext';
+import { Search, RefreshCw, Eye, X, BookOpen, DownloadCloud } from 'lucide-react';
 
 export const MediaVaultBuffer: React.FC = () => {
+  const { openReaderForChapter } = useScreens();
   const [activeTab, setActiveTab] = useState<'all' | 'manga' | 'anime' | 'music' | 'games'>('all');
   const [items, setItems] = useState<MediaItemDto[]>([]);
   const [searchFilter, setSearchFilter] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [selectedItem, setSelectedItem] = useState<MediaItemDto | null>(null);
+
+  // Chapter state for selected manga item
+  const [itemChapters, setItemChapters] = useState<ChapterDto[]>([]);
+  const [loadingChapters, setLoadingChapters] = useState<boolean>(false);
+  const [harvestingChapterId, setHarvestingChapterId] = useState<string | null>(null);
 
   const fetchItems = async () => {
     setIsLoading(true);
@@ -46,6 +53,33 @@ export const MediaVaultBuffer: React.FC = () => {
   useEffect(() => {
     fetchItems();
   }, [activeTab]);
+
+  useEffect(() => {
+    if (selectedItem && selectedItem.category === 'MANGA') {
+      setLoadingChapters(true);
+      apiClient.getChaptersForManga(selectedItem.id).then((ch) => {
+        setItemChapters(ch);
+        setLoadingChapters(false);
+      });
+    } else {
+      setItemChapters([]);
+    }
+  }, [selectedItem]);
+
+  const handleHarvestChapter = async (chapterId: string) => {
+    setHarvestingChapterId(chapterId);
+    try {
+      await apiClient.harvestChapter(chapterId);
+      if (selectedItem) {
+        const updated = await apiClient.getChaptersForManga(selectedItem.id);
+        setItemChapters(updated);
+      }
+    } catch (err) {
+      console.error('[MediaVaultBuffer] Chapter harvest failed:', err);
+    } finally {
+      setHarvestingChapterId(null);
+    }
+  };
 
   const filteredItems = items.filter(
     (i) =>
@@ -193,6 +227,84 @@ export const MediaVaultBuffer: React.FC = () => {
                   <p className="text-[#8a95a5] bg-[#0c0f13] p-2 border border-[#212832] leading-relaxed">
                     {selectedItem.description}
                   </p>
+                </div>
+              )}
+
+              {/* Manga Chapter Catalog with direct [READ] and [HARVEST] actions */}
+              {selectedItem.category === 'MANGA' && (
+                <div className="mt-2 border-t border-[#212832] pt-2">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-[#3898ec] font-bold text-[10px] uppercase">
+                      CHAPTER CATALOG ({itemChapters.length})
+                    </span>
+                    {loadingChapters && <RefreshCw className="w-3 h-3 text-[#3898ec] animate-spin" />}
+                  </div>
+                  <div className="max-h-48 overflow-y-auto bg-[#0c0f13] border border-[#212832]">
+                    {itemChapters.length === 0 && !loadingChapters ? (
+                      <div className="p-2 text-[10px] text-[#6b7a8d]">No chapters cataloged yet.</div>
+                    ) : (
+                      <table className="apex-table text-[10px]">
+                        <thead>
+                          <tr>
+                            <th className="w-12">CH #</th>
+                            <th>TITLE</th>
+                            <th className="w-16">PAGES</th>
+                            <th className="w-20">STATUS</th>
+                            <th className="w-24 text-center">ACTION</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {itemChapters.map((ch) => (
+                            <tr key={ch.id}>
+                              <td className="font-bold text-[#3898ec]">{ch.chapterNumber}</td>
+                              <td className="text-[#e2e8f0] truncate max-w-[140px]">
+                                {ch.title || `Chapter ${ch.chapterNumber}`}
+                              </td>
+                              <td className="text-[#8a95a5]">{ch.pageCount || '-'}</td>
+                              <td>
+                                <span
+                                  className={`px-1 py-0.2 text-[8px] font-semibold border ${
+                                    ch.downloaded
+                                      ? 'border-[#3fb950] text-[#3fb950]'
+                                      : 'border-[#f08c00] text-[#f08c00]'
+                                  }`}
+                                >
+                                  {ch.downloaded ? 'DOWNLOADED' : 'AVAILABLE'}
+                                </span>
+                              </td>
+                              <td className="text-center">
+                                {ch.downloaded ? (
+                                  <button
+                                    onClick={() => {
+                                      setSelectedItem(null);
+                                      openReaderForChapter(ch.id);
+                                    }}
+                                    className="apex-btn-primary py-0.2 px-2 text-[9px] flex items-center justify-center space-x-1 w-full"
+                                  >
+                                    <BookOpen className="w-2.5 h-2.5" />
+                                    <span>READ</span>
+                                  </button>
+                                ) : (
+                                  <button
+                                    onClick={() => handleHarvestChapter(ch.id)}
+                                    disabled={harvestingChapterId === ch.id}
+                                    className="apex-btn-secondary py-0.2 px-1 text-[9px] flex items-center justify-center space-x-1 w-full disabled:opacity-50"
+                                  >
+                                    <DownloadCloud
+                                      className={`w-2.5 h-2.5 ${
+                                        harvestingChapterId === ch.id ? 'animate-bounce text-[#f08c00]' : ''
+                                      }`}
+                                    />
+                                    <span>{harvestingChapterId === ch.id ? 'HARVESTING' : 'HARVEST'}</span>
+                                  </button>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
                 </div>
               )}
 

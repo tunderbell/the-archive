@@ -84,6 +84,27 @@ export interface TestSelectorResponse {
   sampleImages: string[];
 }
 
+export interface ChapterDto {
+  id: string;
+  chapterNumber: number;
+  title?: string;
+  sourceUrl?: string;
+  storagePath?: string | null;
+  downloaded: boolean;
+  pageCount?: number;
+}
+
+export interface ChapterPagesDto {
+  chapterId: string;
+  mangaId: string;
+  seriesTitle: string;
+  chapterNumber: number;
+  chapterTitle?: string;
+  downloaded: boolean;
+  pageCount: number;
+  pageFiles: string[];
+}
+
 export const apiClient = {
   /**
    * Fetches all saved screen layouts from the backend database.
@@ -327,5 +348,45 @@ export const apiClient = {
     } catch {
       return [];
     }
+  },
+
+  /**
+   * Retrieves all chapters for a manga series.
+   */
+  async getChaptersForManga(mangaId: string): Promise<ChapterDto[]> {
+    try {
+      const res = await fetch(`/api/manga/${mangaId}/chapters`);
+      if (!res.ok) return [];
+      return res.json();
+    } catch {
+      return [];
+    }
+  },
+
+  /**
+   * Retrieves page image list and metadata for a chapter.
+   */
+  async getChapterPages(chapterId: string): Promise<ChapterPagesDto> {
+    const res = await fetch(`/api/manga/chapters/${chapterId}/pages`);
+    if (!res.ok) throw new Error('Failed to fetch chapter pages');
+    return res.json();
+  },
+
+  /**
+   * Builds the direct image URL for a chapter page.
+   */
+  getChapterPageUrl(chapterId: string, filename: string): string {
+    return `/api/manga/chapters/${chapterId}/pages/${encodeURIComponent(filename)}`;
+  },
+
+  /**
+   * Launches the OS native viewer / file manager for a chapter.
+   */
+  async openExternalViewer(chapterId: string): Promise<{ status: string; message: string }> {
+    const res = await fetch(`/api/manga/chapters/${chapterId}/open-external`, {
+      method: 'POST',
+    });
+    if (!res.ok) throw new Error('Failed to open in external viewer');
+    return res.json();
   },
 };

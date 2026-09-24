@@ -29,6 +29,9 @@ interface ScreenContextType {
   openBufferRequest: string | null;
   triggerOpenBuffer: (bufferId: string) => void;
   clearOpenBufferRequest: () => void;
+  activeChapterId: string | null;
+  setActiveChapterId: (id: string | null) => void;
+  openReaderForChapter: (chapterId: string) => void;
 }
 
 const ScreenContext = createContext<ScreenContextType | undefined>(undefined);
@@ -42,6 +45,7 @@ export const ScreenProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [commandBarPosition, setCommandBarPosition] = useState<'TOP' | 'BOTTOM'>('TOP');
   const [isWsConnected, setIsWsConnected] = useState<boolean>(false);
   const [openBufferRequest, setOpenBufferRequest] = useState<string | null>(null);
+  const [activeChapterId, setActiveChapterId] = useState<string | null>(null);
 
   // Monitor WebSocket STOMP connection state
   useEffect(() => {
@@ -199,6 +203,11 @@ export const ScreenProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     setOpenBufferRequest(null);
   }, []);
 
+  const openReaderForChapter = useCallback((chapterId: string) => {
+    setActiveChapterId(chapterId);
+    setOpenBufferRequest('reader');
+  }, []);
+
   return (
     <ScreenContext.Provider
       value={{
@@ -215,6 +224,9 @@ export const ScreenProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         openBufferRequest,
         triggerOpenBuffer,
         clearOpenBufferRequest,
+        activeChapterId,
+        setActiveChapterId,
+        openReaderForChapter,
       }}
     >
       {children}

@@ -23,6 +23,7 @@ interface BufferDefinition {
 
 export const AVAILABLE_BUFFERS: BufferDefinition[] = [
   { id: 'media-vault', code: 'VLT', name: 'Media Vault', description: 'Manga, Anime, Music & Game collections' },
+  { id: 'reader', code: 'READ', name: 'Manga Reader', description: 'Dual-mode in-app manga and webtoon viewer' },
   { id: 'scraper-monitor', code: 'SCRP', name: 'Harvester Engine', description: 'Jsoup Scout & Selenium Harvester monitor' },
   { id: 'terminal', code: 'TERM', name: 'XTRM Terminal', description: 'Interactive CLI connected to Spring Boot' },
   { id: 'system-log', code: 'LOG', name: 'System Log', description: 'Live event stream & audit log' },

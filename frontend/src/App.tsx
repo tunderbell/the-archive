@@ -27,6 +27,7 @@ import { SystemLogBuffer } from './components/buffers/SystemLogBuffer';
 import { TerminalBuffer } from './components/buffers/TerminalBuffer';
 import { ChatRoomBuffer } from './components/buffers/ChatRoomBuffer';
 import { ScraperMonitorBuffer } from './components/buffers/ScraperMonitorBuffer';
+import { ReaderBuffer } from './components/buffers/ReaderBuffer';
 
 // Map component identifiers directly to React buffer views
 const BUFFER_COMPONENTS = {
@@ -35,6 +36,7 @@ const BUFFER_COMPONENTS = {
   'terminal': TerminalBuffer,
   'chat-room': ChatRoomBuffer,
   'scraper-monitor': ScraperMonitorBuffer,
+  'reader': ReaderBuffer,
 };
 
 export const App: React.FC = () => {

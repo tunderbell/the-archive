@@ -1,6 +1,7 @@
 package com.archive.domain.manga.chapter;
 
 import com.archive.domain.manga.Manga;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -25,6 +26,7 @@ public class Chapter {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "manga_uuid", nullable = false)
+    @JsonIgnoreProperties({"chapters", "hibernateLazyInitializer", "handler"})
     private Manga manga;
 
     @Column(nullable = false)

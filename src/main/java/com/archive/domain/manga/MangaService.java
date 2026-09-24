@@ -2,15 +2,26 @@ package com.archive.domain.manga;
 
 import com.archive.domain.manga.chapter.Chapter;
 import com.archive.domain.manga.chapter.ChapterRepository;
+import com.archive.domain.manga.chapter.dto.ChapterPagesDto;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.core.io.FileSystemResource;
+import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.OffsetDateTime;
 import java.util.*;
 
 @Service
 @Transactional
 public class MangaService {
+
+    private static final Logger log = LoggerFactory.getLogger(MangaService.class);
 
     private final MangaRepository mangaRepository;
     private final ChapterRepository chapterRepository;
@@ -111,5 +122,102 @@ public class MangaService {
         manga.setCustomImageSelector(imageSelector);
         manga.setCustomChapterSelector(chapterSelector);
         return mangaRepository.save(manga);
+    }
+
+    // --- In-App Reader & Media Serving ---
+
+    @Transactional(readOnly = true)
+    public ChapterPagesDto getChapterPages(UUID chapterId) {
+        Chapter chapter = chapterRepository.findById(chapterId)
+                .orElseThrow(() -> new IllegalArgumentException("Chapter not found with ID: " + chapterId));
+
+        Manga manga = chapter.getManga();
+        String seriesTitle = manga != null ? manga.getTitle() : "Unknown Series";
+        UUID mangaId = manga != null ? manga.getId() : null;
+
+        if (!chapter.isDownloaded() || chapter.getStoragePath() == null) {
+            return new ChapterPagesDto(
+                    chapterId, mangaId, seriesTitle, chapter.getChapterNumber(),
+                    chapter.getTitle(), false, 0, Collections.emptyList()
+            );
+        }
+
+        Path dir = Paths.get(chapter.getStoragePath());
+        if (!Files.exists(dir) || !Files.isDirectory(dir)) {
+            return new ChapterPagesDto(
+                    chapterId, mangaId, seriesTitle, chapter.getChapterNumber(),
+                    chapter.getTitle(), false, 0, Collections.emptyList()
+            );
+        }
+
+        try (var stream = Files.list(dir)) {
+            List<String> imageFiles = stream
+                    .filter(Files::isRegularFile)
+                    .map(p -> p.getFileName().toString())
+                    .filter(name -> {
+                        String lower = name.toLowerCase();
+                        return lower.endsWith(".jpg") || lower.endsWith(".jpeg")
+                                || lower.endsWith(".png") || lower.endsWith(".webp") || lower.endsWith(".gif");
+                    })
+                    .sorted(Comparator.naturalOrder())
+                    .toList();
+
+            return new ChapterPagesDto(
+                    chapterId, mangaId, seriesTitle, chapter.getChapterNumber(),
+                    chapter.getTitle(), true, imageFiles.size(), imageFiles
+            );
+        } catch (IOException e) {
+            log.error("Failed to read chapter directory [{}]: {}", dir, e.getMessage());
+            return new ChapterPagesDto(
+                    chapterId, mangaId, seriesTitle, chapter.getChapterNumber(),
+                    chapter.getTitle(), true, 0, Collections.emptyList()
+            );
+        }
+    }
+
+    @Transactional(readOnly = true)
+    public Resource getChapterPageResource(UUID chapterId, String filename) {
+        if (filename.contains("..") || filename.contains("/") || filename.contains("\\")) {
+            throw new IllegalArgumentException("Invalid filename security violation: " + filename);
+        }
+
+        Chapter chapter = chapterRepository.findById(chapterId)
+                .orElseThrow(() -> new IllegalArgumentException("Chapter not found with ID: " + chapterId));
+
+        if (chapter.getStoragePath() == null) {
+            throw new IllegalArgumentException("Chapter has not been downloaded to storage yet.");
+        }
+
+        Path basePath = Paths.get(chapter.getStoragePath()).normalize();
+        Path filePath = basePath.resolve(filename).normalize();
+
+        if (!filePath.startsWith(basePath) || !Files.exists(filePath)) {
+            throw new IllegalArgumentException("File not found: " + filename);
+        }
+
+        return new FileSystemResource(filePath);
+    }
+
+    public void openInExternalViewer(UUID chapterId) throws IOException {
+        Chapter chapter = chapterRepository.findById(chapterId)
+                .orElseThrow(() -> new IllegalArgumentException("Chapter not found with ID: " + chapterId));
+
+        if (chapter.getStoragePath() == null) {
+            throw new IllegalArgumentException("Chapter is not stored locally.");
+        }
+
+        Path path = Paths.get(chapter.getStoragePath()).toAbsolutePath();
+        if (!Files.exists(path)) {
+            throw new IllegalArgumentException("Directory does not exist: " + path);
+        }
+
+        String os = System.getProperty("os.name").toLowerCase();
+        if (os.contains("win")) {
+            new ProcessBuilder("explorer.exe", path.toString()).start();
+        } else if (os.contains("mac")) {
+            new ProcessBuilder("open", path.toString()).start();
+        } else {
+            new ProcessBuilder("xdg-open", path.toString()).start();
+        }
     }
 }

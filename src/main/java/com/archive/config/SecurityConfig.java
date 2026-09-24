@@ -1,6 +1,6 @@
 package com.archive.config;
 
 
-public class securityConfig {
+public class SecurityConfig {
     
 }

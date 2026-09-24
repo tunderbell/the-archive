@@ -3,6 +3,8 @@ package com.archive.config;
 import com.archive.core.model.Visibility;
 import com.archive.domain.anime.*;
 import com.archive.domain.manga.*;
+import com.archive.domain.manga.chapter.Chapter;
+import com.archive.domain.manga.chapter.ChapterRepository;
 import com.archive.domain.music.*;
 import com.archive.domain.videogames.*;
 import com.archive.scraper.ScraperService;
@@ -12,6 +14,13 @@ import org.slf4j.LoggerFactory;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.stereotype.Component;
 
+import javax.imageio.ImageIO;
+import java.awt.*;
+import java.awt.image.BufferedImage;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.Set;
 
 /**
@@ -33,17 +42,20 @@ public class VaultDataSeeder implements CommandLineRunner {
     private final AlbumService albumService;
     private final GameService gameService;
     private final ScraperService scraperService;
+    private final ChapterRepository chapterRepository;
 
     public VaultDataSeeder(MangaService mangaService,
                            AnimeService animeService,
                            AlbumService albumService,
                            GameService gameService,
-                           ScraperService scraperService) {
+                           ScraperService scraperService,
+                           ChapterRepository chapterRepository) {
         this.mangaService = mangaService;
         this.animeService = animeService;
         this.albumService = albumService;
         this.gameService = gameService;
         this.scraperService = scraperService;
+        this.chapterRepository = chapterRepository;
     }
 
     @Override
@@ -53,6 +65,7 @@ public class VaultDataSeeder implements CommandLineRunner {
         seedMusicIfEmpty();
         seedGamesIfEmpty();
         seedTemplatesIfEmpty();
+        seedChaptersIfEmpty();
     }
 
     private void seedTemplatesIfEmpty() {
@@ -196,6 +209,162 @@ public class VaultDataSeeder implements CommandLineRunner {
             g2.setVisibility(Visibility.PRIVATE);
             g2.setPlatforms(Set.of("PC", "PlayStation 5"));
             gameService.createGame(g2);
+        }
+    }
+
+    private void seedChaptersIfEmpty() {
+        if (chapterRepository.count() == 0) {
+            log.info("[VaultDataSeeder] Initializing sample chapters and generating local page assets...");
+
+            Manga manga = mangaService.getAllManga().stream()
+                    .filter(m -> m.getTitle().equalsIgnoreCase("Solo Leveling"))
+                    .findFirst()
+                    .orElseGet(() -> {
+                        Manga m = new Manga();
+                        m.setTitle("Solo Leveling");
+                        m.setAuthor("Chugong");
+                        m.setArtist("DUBU (REDICE Studio)");
+                        m.setType(MangaType.MANWHA);
+                        m.setStatus(MangaStatus.COMPLETED);
+                        m.setVisibility(Visibility.WORKSPACE);
+                        m.setGenres(Set.of("Action", "Fantasy", "System"));
+                        return mangaService.createManga(m);
+                    });
+
+            Path chapterDir = Paths.get("./archive_vault/manga/Solo_Leveling/Chapter_1.0");
+            try {
+                Files.createDirectories(chapterDir);
+                for (int i = 1; i <= 4; i++) {
+                    Path imgPath = chapterDir.resolve(String.format("%03d.png", i));
+                    if (!Files.exists(imgPath)) {
+                        createSamplePageImage(imgPath, "SOLO LEVELING", 1.0, i, 4);
+                    }
+                }
+
+                Chapter ch1 = new Chapter();
+                ch1.setChapterNumber(1.0);
+                ch1.setTitle("I'm Used to It");
+                ch1.setDownloaded(true);
+                ch1.setPageCount(4);
+                ch1.setStoragePath(chapterDir.toAbsolutePath().toString());
+                ch1.setSourceUrl("https://asuracomic.net/series/solo-leveling-chapter-1");
+                ch1.setManga(manga);
+                manga.addChapter(ch1);
+                chapterRepository.save(ch1);
+
+                String[] titles = new String[]{"If I Had Just One More Chance", "The Daily Quest", "The Weakest Hunter"};
+                for (int i = 2; i <= 4; i++) {
+                    Chapter ch = new Chapter();
+                    ch.setChapterNumber((double) i);
+                    ch.setTitle(titles[i - 2]);
+                    ch.setDownloaded(false);
+                    ch.setPageCount(0);
+                    ch.setSourceUrl("https://asuracomic.net/series/solo-leveling-chapter-" + i);
+                    ch.setManga(manga);
+                    manga.addChapter(ch);
+                    chapterRepository.save(ch);
+                }
+
+                manga.setTotalChapters(4);
+                manga.setDownloadedChapters(1);
+                mangaService.createManga(manga);
+                log.info("[VaultDataSeeder] Successfully seeded 4 sample chapters for [{}] with generated page assets.", manga.getTitle());
+            } catch (Exception e) {
+                log.error("[VaultDataSeeder] Failed to seed sample chapter assets: {}", e.getMessage(), e);
+            }
+        }
+    }
+
+    private void createSamplePageImage(Path targetPath, String seriesTitle, double chapterNum, int pageNum, int totalPages) {
+        int width = 800;
+        int height = 1200;
+        BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
+        Graphics2D g2d = image.createGraphics();
+
+        g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+        g2d.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+
+        // Dark background matching APEX console
+        g2d.setColor(new Color(10, 13, 17));
+        g2d.fillRect(0, 0, width, height);
+
+        // Grid lines (subtle cyberpunk pattern)
+        g2d.setColor(new Color(21, 27, 34));
+        for (int y = 0; y < height; y += 40) {
+            g2d.drawLine(0, y, width, y);
+        }
+        for (int x = 0; x < width; x += 40) {
+            g2d.drawLine(x, 0, x, height);
+        }
+
+        // Inner tactical border
+        g2d.setColor(new Color(56, 152, 236)); // Cyan
+        g2d.setStroke(new BasicStroke(2));
+        g2d.drawRect(40, 40, width - 80, height - 80);
+
+        // Secondary amber corner brackets
+        g2d.setColor(new Color(240, 140, 0)); // Amber
+        int cornerLen = 30;
+        g2d.drawLine(35, 35, 35 + cornerLen, 35);
+        g2d.drawLine(35, 35, 35, 35 + cornerLen);
+        g2d.drawLine(width - 35, 35, width - 35 - cornerLen, 35);
+        g2d.drawLine(width - 35, 35, width - 35, 35 + cornerLen);
+        g2d.drawLine(35, height - 35, 35 + cornerLen, height - 35);
+        g2d.drawLine(35, height - 35, 35, height - 35 - cornerLen);
+        g2d.drawLine(width - 35, height - 35, width - 35 - cornerLen, height - 35);
+        g2d.drawLine(width - 35, height - 35, width - 35, height - 35 - cornerLen);
+
+        // Header Text
+        g2d.setColor(new Color(56, 152, 236));
+        g2d.setFont(new Font(Font.MONOSPACED, Font.BOLD, 18));
+        g2d.drawString("THE ARCHIVE // APEX MEDIA VAULT", 60, 80);
+
+        g2d.setColor(new Color(138, 149, 165));
+        g2d.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 14));
+        g2d.drawString("SECTOR: MANGA READER BUFFER // LOCAL CACHE", 60, 105);
+
+        // Center Box: Chapter Title & Art
+        g2d.setColor(new Color(17, 22, 29));
+        g2d.fillRect(80, 200, width - 160, 600);
+        g2d.setColor(new Color(33, 40, 50));
+        g2d.drawRect(80, 200, width - 160, 600);
+
+        g2d.setColor(new Color(240, 140, 0));
+        g2d.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 36));
+        FontMetrics fmTitle = g2d.getFontMetrics();
+        int titleX = (width - fmTitle.stringWidth(seriesTitle)) / 2;
+        g2d.drawString(seriesTitle, titleX, 350);
+
+        g2d.setColor(Color.WHITE);
+        g2d.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 24));
+        String chText = String.format("CHAPTER %.0f", chapterNum);
+        FontMetrics fmCh = g2d.getFontMetrics();
+        g2d.drawString(chText, (width - fmCh.stringWidth(chText)) / 2, 420);
+
+        g2d.setColor(new Color(63, 185, 80));
+        g2d.setFont(new Font(Font.MONOSPACED, Font.BOLD, 22));
+        String pageText = String.format("[ PAGE %02d OF %02d ]", pageNum, totalPages);
+        FontMetrics fmPg = g2d.getFontMetrics();
+        g2d.drawString(pageText, (width - fmPg.stringWidth(pageText)) / 2, 500);
+
+        g2d.setColor(new Color(107, 122, 141));
+        g2d.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 14));
+        String noteText = "DEMONSTRATION PAGE // HIGH PERFORMANCE STREAMING";
+        FontMetrics fmNote = g2d.getFontMetrics();
+        g2d.drawString(noteText, (width - fmNote.stringWidth(noteText)) / 2, 600);
+
+        // Footer info
+        g2d.setColor(new Color(107, 122, 141));
+        g2d.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
+        g2d.drawString("STATUS: DOWNLOADED & VERIFIED", 60, height - 70);
+        g2d.drawString(String.format("FILE: %s", targetPath.getFileName()), width - 240, height - 70);
+
+        g2d.dispose();
+
+        try {
+            ImageIO.write(image, "PNG", targetPath.toFile());
+        } catch (IOException e) {
+            log.error("Failed to write image {}: {}", targetPath, e.getMessage());
         }
     }
 }
