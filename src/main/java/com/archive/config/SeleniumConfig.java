@@ -46,6 +46,12 @@ public class SeleniumConfig {
     public ChromeOptions chromeOptions() {
         ChromeOptions options = new ChromeOptions();
 
+        // Detect container-provided or custom Chromium binary path
+        String envChromeBin = System.getenv("CHROME_BIN");
+        if (envChromeBin != null && !envChromeBin.isBlank()) {
+            options.setBinary(envChromeBin);
+        }
+
         // Run in headless mode (no visual UI window appears on the desktop)
         // "--headless=new" invokes Chromium's modern headless architecture (Chrome 109+),
         // which runs the full Chromium engine rather than the legacy lightweight shell.
