@@ -22,6 +22,8 @@ import {
   RefreshCw,
   BookOpen,
   Layers,
+  Maximize2,
+  Minimize2,
 } from 'lucide-react';
 
 export const ReaderBuffer: React.FC = () => {
@@ -33,6 +35,7 @@ export const ReaderBuffer: React.FC = () => {
   const [currentPage, setCurrentPage] = useState<number>(0);
   const [readingMode, setReadingMode] = useState<'PAGED' | 'WEBTOON'>('PAGED');
   const [zoomMode, setZoomMode] = useState<'FIT_WIDTH' | 'FIT_HEIGHT' | 'ORIGINAL'>('FIT_WIDTH');
+  const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
 
   // Loading & Action State
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -108,11 +111,37 @@ export const ReaderBuffer: React.FC = () => {
       if (e.key === 'w' || e.key === 'W') {
         setReadingMode((prev) => (prev === 'PAGED' ? 'WEBTOON' : 'PAGED'));
       }
+
+      if (e.key === 'f' || e.key === 'F') {
+        toggleFullscreen();
+      }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [readingMode, chapterData, currentPage]);
+
+  const toggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      if (containerRef.current?.requestFullscreen) {
+        containerRef.current.requestFullscreen().catch(() => {});
+      }
+      setIsFullscreen(true);
+    } else {
+      if (document.exitFullscreen) {
+        document.exitFullscreen().catch(() => {});
+      }
+      setIsFullscreen(false);
+    }
+  };
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(Boolean(document.fullscreenElement));
+    };
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, []);
 
   const handleNextPage = () => {
     if (!chapterData) return;
@@ -198,7 +227,9 @@ export const ReaderBuffer: React.FC = () => {
   return (
     <div
       ref={containerRef}
-      className="h-full w-full bg-[#0a0d11] text-[#e2e8f0] flex flex-col font-mono text-xs overflow-hidden select-none relative"
+      className={`w-full bg-[#0a0d11] text-[#e2e8f0] flex flex-col font-mono text-xs overflow-hidden select-none ${
+        isFullscreen ? 'fixed inset-0 z-[9999] h-screen w-screen' : 'h-full relative'
+      }`}
     >
       {/* 1. Tactical APEX Reader Header Bar */}
       <div className="bg-[#151b22] border-b border-[#212832] px-2 py-1.5 flex items-center justify-between flex-wrap gap-1 z-30">
@@ -318,6 +349,16 @@ export const ReaderBuffer: React.FC = () => {
           >
             <ExternalLink className="w-3 h-3" />
             <span>SYSTEM VIEWER</span>
+          </button>
+          <button
+            onClick={toggleFullscreen}
+            className={`apex-btn-secondary flex items-center space-x-1 py-0.5 px-2 text-[10px] ${
+              isFullscreen ? 'text-[#3898ec] border-[#3898ec]' : ''
+            }`}
+            title={isFullscreen ? 'Exit Fullscreen (F)' : 'Fullscreen View (F)'}
+          >
+            {isFullscreen ? <Minimize2 className="w-3 h-3" /> : <Maximize2 className="w-3 h-3" />}
+            <span>{isFullscreen ? 'EXIT FULLSCREEN' : 'FULLSCREEN'}</span>
           </button>
         </div>
       </div>

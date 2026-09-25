@@ -15,7 +15,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { Search, Download, CheckCircle2, AlertCircle, Wrench, RefreshCw, Layers, Eye, MousePointer, X } from 'lucide-react';
+import { Search, Download, CheckCircle2, AlertCircle, Wrench, RefreshCw, Layers, Eye, MousePointer, X, Check } from 'lucide-react';
 import { apiClient, TestSelectorResponse, ScraperTemplateDto } from '../../api/apiClient';
 import { stompClient } from '../../api/stompClient';
 
@@ -24,6 +24,7 @@ interface DiscoveredChapter {
   chapterNumber: number;
   title: string;
   sourceUrl: string;
+  downloaded?: boolean;
 }
 
 interface HarvestingJob {
@@ -156,6 +157,24 @@ export const ScraperMonitorBuffer: React.FC = () => {
     try {
       const result = await apiClient.scoutSeries(targetUrl.trim());
       setScoutedSeries(result);
+      if (result.id) {
+        try {
+          const dbChapters = await apiClient.getChaptersForManga(result.id);
+          if (dbChapters && dbChapters.length > 0) {
+            setScoutedChapters(
+              dbChapters.map((ch) => ({
+                id: ch.id,
+                chapterNumber: ch.chapterNumber,
+                title: ch.title || `Chapter ${ch.chapterNumber}`,
+                sourceUrl: ch.sourceUrl || '',
+                downloaded: ch.downloaded,
+              }))
+            );
+            setStatusMessage({ text: `Discovered & synced ${dbChapters.length} chapters for "${result.title}"!` });
+            return;
+          }
+        } catch {}
+      }
       if (result.chapters && result.chapters.length > 0) {
         setScoutedChapters(result.chapters);
         setStatusMessage({ text: `Discovered ${result.chapters.length} chapters for "${result.title}"!` });
@@ -199,6 +218,13 @@ export const ScraperMonitorBuffer: React.FC = () => {
     if (isRealUuid && chapterId) {
       try {
         await apiClient.harvestChapter(chapterId);
+        setScoutedChapters((prev) =>
+          prev.map((c) =>
+            (c.id && c.id === chapterId) || c.chapterNumber === ch.chapterNumber
+              ? { ...c, downloaded: true }
+              : c
+          )
+        );
         setStatusMessage({ text: `✔ Completed harvest: Ch ${ch.chapterNumber} archived to vault.` });
       } catch (err: any) {
         setStatusMessage({ text: `Harvest error: ${err.message}`, error: true });
@@ -224,6 +250,9 @@ export const ScraperMonitorBuffer: React.FC = () => {
         setActiveJobs((prev) =>
           prev.map((j) => (j.id === jobId ? { ...j, progress: 100, status: 'COMPLETED', threads: 0 } : j))
         );
+        setScoutedChapters((prev) =>
+          prev.map((c) => (c.chapterNumber === ch.chapterNumber ? { ...c, downloaded: true } : c))
+        );
         setStatusMessage({ text: `✔ Completed harvest: Ch ${ch.chapterNumber} archived to vault.` });
       }, 2300);
     }
@@ -231,9 +260,17 @@ export const ScraperMonitorBuffer: React.FC = () => {
 
   const handleHarvestAllScoutedChapters = async () => {
     if (scoutedChapters.length === 0) return;
+    const unharvested = scoutedChapters.filter((c) => !c.downloaded);
+    if (unharvested.length === 0) {
+      const confirmAll = window.confirm(
+        'All chapters in this queue are already harvested in your vault.\n\nDo you want to re-download all chapters as duplicates and overwrite existing files?'
+      );
+      if (!confirmAll) return;
+    }
+    const targetList = unharvested.length > 0 ? unharvested : scoutedChapters;
     setIsHarvestingAll(true);
-    setStatusMessage({ text: `Starting batch harvest of ${scoutedChapters.length} chapters...` });
-    for (const ch of scoutedChapters) {
+    setStatusMessage({ text: `Starting batch harvest of ${targetList.length} chapters...` });
+    for (const ch of targetList) {
       await handleHarvestChapter(ch);
       await new Promise((r) => setTimeout(r, 600)); // Respectful rate-limiting pause
     }
@@ -492,13 +529,30 @@ export const ScraperMonitorBuffer: React.FC = () => {
                       <td className="font-semibold text-[#e2e8f0]">{ch.title}</td>
                       <td className="text-[#6b7a8d] text-[10px] truncate max-w-xs">{ch.sourceUrl}</td>
                       <td className="text-center">
-                        <button
-                          onClick={() => handleHarvestChapter(ch)}
-                          className="apex-btn-primary flex items-center justify-center space-x-1 w-full py-0.5"
-                        >
-                          <Download className="w-2.5 h-2.5" />
-                          <span>HARVEST</span>
-                        </button>
+                        {ch.downloaded ? (
+                          <button
+                            onClick={() => {
+                              const confirmDup = window.confirm(
+                                `Chapter ${ch.chapterNumber} has already been downloaded to your vault.\n\nAre you sure you want to download a duplicate and overwrite existing pages?`
+                              );
+                              if (confirmDup) handleHarvestChapter(ch);
+                            }}
+                            className="apex-btn-secondary flex items-center justify-center space-x-1 w-full py-0.5 opacity-60 hover:opacity-100 hover:border-[#f08c00] hover:text-[#f08c00] transition-opacity"
+                            title="Already downloaded to vault. Click to re-harvest duplicate."
+                          >
+                            <Check className="w-2.5 h-2.5 text-[#3fb950]" />
+                            <span>HARVESTED</span>
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => handleHarvestChapter(ch)}
+                            className="apex-btn-primary flex items-center justify-center space-x-1 w-full py-0.5"
+                            title="Harvest chapter into local vault"
+                          >
+                            <Download className="w-2.5 h-2.5" />
+                            <span>HARVEST</span>
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ))}

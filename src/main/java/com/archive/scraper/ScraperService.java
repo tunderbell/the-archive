@@ -149,7 +149,11 @@ public class ScraperService {
         // Delegate deduplication and saving to MangaService
         mangaService.addDiscoveredChapters(savedManga.getId(), chapters);
         log.info("Successfully registered series [{}] with [{}] discovered chapters", savedManga.getTitle(), chapters.size());
-        return savedManga;
+        Manga reloaded = mangaService.getMangaById(savedManga.getId()).orElse(savedManga);
+        if (reloaded.getChapters() != null) {
+            reloaded.getChapters().size();
+        }
+        return reloaded;
     }
 
     /**
