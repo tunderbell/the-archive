@@ -15,12 +15,14 @@ import org.springframework.boot.CommandLineRunner;
 import org.springframework.stereotype.Component;
 
 import javax.imageio.ImageIO;
+import javax.sql.DataSource;
 import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.HashSet;
 import java.util.Set;
 
 /**
@@ -43,23 +45,27 @@ public class VaultDataSeeder implements CommandLineRunner {
     private final GameService gameService;
     private final ScraperService scraperService;
     private final ChapterRepository chapterRepository;
+    private final DataSource dataSource;
 
     public VaultDataSeeder(MangaService mangaService,
                            AnimeService animeService,
                            AlbumService albumService,
                            GameService gameService,
                            ScraperService scraperService,
-                           ChapterRepository chapterRepository) {
+                           ChapterRepository chapterRepository,
+                           DataSource dataSource) {
         this.mangaService = mangaService;
         this.animeService = animeService;
         this.albumService = albumService;
         this.gameService = gameService;
         this.scraperService = scraperService;
         this.chapterRepository = chapterRepository;
+        this.dataSource = dataSource;
     }
 
     @Override
     public void run(String... args) {
+        ensureSchemaColumns();
         seedMangaIfEmpty();
         seedAnimeIfEmpty();
         seedMusicIfEmpty();
@@ -68,28 +74,85 @@ public class VaultDataSeeder implements CommandLineRunner {
         seedChaptersIfEmpty();
     }
 
-    private void seedTemplatesIfEmpty() {
-        if (scraperService.getAllTemplates().isEmpty()) {
-            log.info("[VaultDataSeeder] Initializing default Scraper site recipes...");
+    /**
+     * Self-healing SQLite schema verification:
+     * Ensures all necessary columns exist on startup even if Hibernate's SQLite dialect
+     * doesn't perform automated ALTER TABLE statements.
+     */
+    private void ensureSchemaColumns() {
+        try (var conn = dataSource.getConnection();
+             var stmt = conn.createStatement()) {
 
+            // Check chapter table columns
+            var rsChapter = stmt.executeQuery("PRAGMA table_info(chapter)");
+            Set<String> chapterCols = new HashSet<>();
+            while (rsChapter.next()) {
+                chapterCols.add(rsChapter.getString("name").toLowerCase());
+            }
+            if (!chapterCols.contains("is_read")) {
+                stmt.execute("ALTER TABLE chapter ADD COLUMN is_read BOOLEAN DEFAULT 0");
+                log.info("[VaultDataSeeder] Added missing column 'is_read' to chapter table.");
+            }
+            if (!chapterCols.contains("last_read_page")) {
+                stmt.execute("ALTER TABLE chapter ADD COLUMN last_read_page INTEGER DEFAULT 0");
+                log.info("[VaultDataSeeder] Added missing column 'last_read_page' to chapter table.");
+            }
+            if (!chapterCols.contains("cbz_path")) {
+                stmt.execute("ALTER TABLE chapter ADD COLUMN cbz_path VARCHAR(255)");
+                log.info("[VaultDataSeeder] Added missing column 'cbz_path' to chapter table.");
+            }
+
+            // Check manga table columns
+            var rsManga = stmt.executeQuery("PRAGMA table_info(manga)");
+            Set<String> mangaCols = new HashSet<>();
+            while (rsManga.next()) {
+                mangaCols.add(rsManga.getString("name").toLowerCase());
+            }
+            if (!mangaCols.contains("last_read_chapter")) {
+                stmt.execute("ALTER TABLE manga ADD COLUMN last_read_chapter DOUBLE DEFAULT 0");
+                log.info("[VaultDataSeeder] Added missing column 'last_read_chapter' to manga table.");
+            }
+            if (!mangaCols.contains("last_read_page")) {
+                stmt.execute("ALTER TABLE manga ADD COLUMN last_read_page INTEGER DEFAULT 0");
+                log.info("[VaultDataSeeder] Added missing column 'last_read_page' to manga table.");
+            }
+            if (!mangaCols.contains("reading_status")) {
+                stmt.execute("ALTER TABLE manga ADD COLUMN reading_status VARCHAR(50) DEFAULT 'UNREAD'");
+                log.info("[VaultDataSeeder] Added missing column 'reading_status' to manga table.");
+            }
+        } catch (Exception e) {
+            log.warn("[VaultDataSeeder] Schema column check note: {}", e.getMessage());
+        }
+    }
+
+    private void seedTemplatesIfEmpty() {
+        boolean hasAsuraComic = scraperService.getAllTemplates().stream()
+                .anyMatch(t -> "asuracomic.net".equalsIgnoreCase(t.getDomainName()));
+        if (!hasAsuraComic) {
+            log.info("[VaultDataSeeder] Initializing Asura Comic site recipe...");
             ScraperTemplate t1 = new ScraperTemplate();
             t1.setName("Asura Comic");
             t1.setDomainName("asuracomic.net");
-            t1.setTitleSelector("span.text-xl, h1");
-            t1.setChapterListSelector("div.pl-4 a, #chapterlist a");
-            t1.setImageSelector("div#readerarea img, div.w-full img");
+            t1.setTitleSelector("span.text-xl, h1, .entry-title");
+            t1.setChapterListSelector("div.pl-4 a, #chapterlist a, a[href*='/chapter/'], a[href*='/chapter-']");
+            t1.setImageSelector("div[data-page] img, img[data-page-index], div.w-full img, #readerarea img, div#readerarea img");
             t1.setCoverImageSelector("img[alt='poster'], div.thumb img");
             t1.setRequiresJs(false);
             t1.setRateLimitMs(1000);
             scraperService.saveTemplate(t1);
+        }
 
+        boolean hasAsuraScans = scraperService.getAllTemplates().stream()
+                .anyMatch(t -> "asurascans.com".equalsIgnoreCase(t.getDomainName()));
+        if (!hasAsuraScans) {
+            log.info("[VaultDataSeeder] Initializing Asura Scans site recipe...");
             ScraperTemplate t2 = new ScraperTemplate();
             t2.setName("Asura Scans");
             t2.setDomainName("asurascans.com");
-            t2.setTitleSelector("h1.entry-title, .series-title");
-            t2.setChapterListSelector("#chapterlist li a");
-            t2.setImageSelector("#readerarea img, .page-break img");
-            t2.setCoverImageSelector(".thumb img");
+            t2.setTitleSelector("h1.text-xl, h1, .entry-title, .series-title");
+            t2.setChapterListSelector("div.pl-4 a, #chapterlist a, a[href*='/chapter/'], a[href*='/chapter-']");
+            t2.setImageSelector("div[data-page] img, img[data-page-index], div.w-full img, #readerarea img, div#readerarea img");
+            t2.setCoverImageSelector("img[alt='poster'], div.thumb img");
             t2.setRequiresJs(false);
             t2.setRateLimitMs(1000);
             scraperService.saveTemplate(t2);

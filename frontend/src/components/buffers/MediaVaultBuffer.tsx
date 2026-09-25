@@ -13,7 +13,7 @@
 import React, { useState, useEffect } from 'react';
 import { apiClient, MediaItemDto, ChapterDto } from '../../api/apiClient';
 import { useScreens } from '../../context/ScreenContext';
-import { Search, RefreshCw, Eye, X, BookOpen, DownloadCloud } from 'lucide-react';
+import { Search, RefreshCw, Eye, X, BookOpen, DownloadCloud, Trash2, GripHorizontal, CheckCircle2, Archive, Bookmark } from 'lucide-react';
 
 export const MediaVaultBuffer: React.FC = () => {
   const { openReaderForChapter } = useScreens();
@@ -23,10 +23,74 @@ export const MediaVaultBuffer: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [selectedItem, setSelectedItem] = useState<MediaItemDto | null>(null);
 
+  // Floating / draggable modal state
+  const [modalPosition, setModalPosition] = useState<{ x: number; y: number } | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragOffset, setDragOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [isDeleting, setIsDeleting] = useState(false);
+
   // Chapter state for selected manga item
   const [itemChapters, setItemChapters] = useState<ChapterDto[]>([]);
   const [loadingChapters, setLoadingChapters] = useState<boolean>(false);
   const [harvestingChapterId, setHarvestingChapterId] = useState<string | null>(null);
+  const [harvestAllStatus, setHarvestAllStatus] = useState<{ current: number; total: number } | null>(null);
+
+  const handleSelectItem = (item: MediaItemDto) => {
+    setSelectedItem(item);
+    setModalPosition(null);
+  };
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest('button')) return;
+    setIsDragging(true);
+    const modalEl = document.getElementById('media-detail-modal');
+    if (modalEl) {
+      const rect = modalEl.getBoundingClientRect();
+      setDragOffset({
+        x: e.clientX - rect.left,
+        y: e.clientY - rect.top,
+      });
+    }
+  };
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isDragging) return;
+      setModalPosition({
+        x: Math.max(10, Math.min(window.innerWidth - 320, e.clientX - dragOffset.x)),
+        y: Math.max(10, Math.min(window.innerHeight - 200, e.clientY - dragOffset.y)),
+      });
+    };
+
+    const handleMouseUp = () => {
+      setIsDragging(false);
+    };
+
+    if (isDragging) {
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
+    }
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isDragging, dragOffset]);
+
+  const handleDeleteMedia = async (item: MediaItemDto) => {
+    if (!window.confirm(`Are you sure you want to permanently delete "${item.title}" from your vault?`)) {
+      return;
+    }
+    setIsDeleting(true);
+    try {
+      await apiClient.deleteMedia(item.category, item.id);
+      setSelectedItem(null);
+      await fetchItems();
+    } catch (err: any) {
+      alert(`Failed to delete media: ${err.message}`);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   const fetchItems = async () => {
     setIsLoading(true);
@@ -35,13 +99,7 @@ export const MediaVaultBuffer: React.FC = () => {
       if (data && data.length > 0) {
         setItems(data);
       } else {
-        // Sample fallback if backend is offline
-        setItems([
-          { id: 'm-1', category: 'MANGA', title: 'Solo Leveling', creatorOrAuthor: 'Chugong', status: 'COMPLETED', count: '179 ch', visibility: 'WORKSPACE', description: 'In a world where hunters must battle deadly monsters, weak hunter Sung Jinwoo discovers a quest log that only he can see.' },
-          { id: 'm-2', category: 'MANGA', title: 'Berserk', creatorOrAuthor: 'Kentaro Miura', status: 'READING', count: '375 ch', visibility: 'PRIVATE', description: 'Guts, a former mercenary now known as the Black Swordsman, is out for revenge.' },
-          { id: 'a-1', category: 'ANIME', title: 'Cowboy Bebop', creatorOrAuthor: 'Shinichiro Watanabe', status: 'FINISHED', count: '1998', visibility: 'PRIVATE', description: 'The futuristic misadventures of an easygoing bounty hunter and his partners.' },
-          { id: 'g-1', category: 'GAMES', title: 'Elden Ring', creatorOrAuthor: 'FromSoftware', status: 'PLAYING', count: '2022', visibility: 'WORKSPACE', description: 'Rise, Tarnished, and be guided by grace to brandish the power of the Elden Ring.' },
-        ]);
+        setItems([]);
       }
     } catch {
       setItems([]);
@@ -78,6 +136,87 @@ export const MediaVaultBuffer: React.FC = () => {
       console.error('[MediaVaultBuffer] Chapter harvest failed:', err);
     } finally {
       setHarvestingChapterId(null);
+    }
+  };
+
+  const handleHarvestAllItemChapters = async () => {
+    const unharvested = itemChapters.filter((c) => !c.downloaded);
+    if (unharvested.length === 0) return;
+
+    setHarvestAllStatus({ current: 0, total: unharvested.length });
+    for (let i = 0; i < unharvested.length; i++) {
+      const ch = unharvested[i];
+      setHarvestAllStatus({ current: i + 1, total: unharvested.length });
+      setHarvestingChapterId(ch.id);
+      try {
+        await apiClient.harvestChapter(ch.id);
+        if (selectedItem) {
+          const updated = await apiClient.getChaptersForManga(selectedItem.id);
+          setItemChapters(updated);
+        }
+      } catch (err) {
+        console.error(`[MediaVaultBuffer] Batch harvest failed for Ch ${ch.chapterNumber}:`, err);
+      }
+    }
+    setHarvestingChapterId(null);
+    setHarvestAllStatus(null);
+  };
+
+  const handleToggleChapterRead = async (chapterId: string) => {
+    try {
+      const updated = await apiClient.toggleChapterRead(chapterId);
+      setItemChapters((prev) =>
+        prev.map((c) => (c.id === chapterId ? { ...c, isRead: updated.isRead } : c))
+      );
+    } catch (err) {
+      console.error('Failed to toggle chapter read state:', err);
+    }
+  };
+
+  const handlePackageOrDownloadCbz = async (ch: ChapterDto) => {
+    if (ch.cbzPath) {
+      window.open(apiClient.getCbzDownloadUrl(ch.id), '_blank');
+      return;
+    }
+    try {
+      const res = await apiClient.packageChapterCbz(ch.id);
+      setItemChapters((prev) =>
+        prev.map((c) => (c.id === ch.id ? { ...c, cbzPath: res.cbzPath } : c))
+      );
+      alert(`Packaged CBZ: ${res.fileName}`);
+    } catch (err: any) {
+      alert(`Failed to package CBZ: ${err.message}`);
+    }
+  };
+
+  const handleUpdateReadingStatus = async (status: string) => {
+    if (!selectedItem) return;
+    try {
+      await apiClient.updateReadingStatus(selectedItem.id, status);
+      setSelectedItem((prev) => (prev ? { ...prev, readingStatus: status, status: status } : null));
+      fetchItems();
+    } catch (err) {
+      console.error('Failed to update reading status:', err);
+    }
+  };
+
+  const handleContinueReading = (item: MediaItemDto) => {
+    if (itemChapters.length > 0) {
+      const targetCh = item.lastReadChapter
+        ? itemChapters.find((c) => c.chapterNumber === item.lastReadChapter) || itemChapters[0]
+        : itemChapters[0];
+      setSelectedItem(null);
+      openReaderForChapter(targetCh.id);
+    } else {
+      apiClient.getChaptersForManga(item.id).then((chs) => {
+        if (chs.length > 0) {
+          const targetCh = item.lastReadChapter
+            ? chs.find((c) => c.chapterNumber === item.lastReadChapter) || chs[0]
+            : chs[0];
+          setSelectedItem(null);
+          openReaderForChapter(targetCh.id);
+        }
+      });
     }
   };
 
@@ -170,13 +309,33 @@ export const MediaVaultBuffer: React.FC = () => {
                   </span>
                 </td>
                 <td className="text-center">
-                  <button
-                    onClick={() => setSelectedItem(item)}
-                    className="apex-btn-primary flex items-center justify-center space-x-1 w-full py-0.5"
-                  >
-                    <Eye className="w-2.5 h-2.5" />
-                    <span>VIEW</span>
-                  </button>
+                  <div className="flex items-center space-x-1 justify-center">
+                    {item.category === 'MANGA' && (
+                      <button
+                        onClick={() => handleContinueReading(item)}
+                        className="apex-btn-secondary text-[#3898ec] border-[#3898ec] hover:bg-[#3898ec] hover:text-black flex items-center justify-center space-x-1 py-0.5 px-1.5"
+                        title={item.lastReadChapter ? `Continue reading Ch. ${item.lastReadChapter}` : 'Start reading'}
+                      >
+                        <BookOpen className="w-2.5 h-2.5" />
+                        <span>{item.lastReadChapter ? `CH ${item.lastReadChapter}` : 'READ'}</span>
+                      </button>
+                    )}
+                    <button
+                      onClick={() => handleSelectItem(item)}
+                      className="apex-btn-primary flex items-center justify-center space-x-1 py-0.5 px-2"
+                      title="View Details & Chapters"
+                    >
+                      <Eye className="w-2.5 h-2.5" />
+                      <span>VIEW</span>
+                    </button>
+                    <button
+                      onClick={() => handleDeleteMedia(item)}
+                      className="apex-btn-secondary text-[#e05656] hover:bg-[#e05656] hover:text-white p-1"
+                      title="Delete from Vault"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}
@@ -184,14 +343,27 @@ export const MediaVaultBuffer: React.FC = () => {
         </table>
       </div>
 
-      {/* APEX Tactical Detail Modal */}
+      {/* APEX Tactical Detail Floating Modal */}
       {selectedItem && (
-        <div className="absolute inset-0 bg-black/75 flex items-center justify-center z-50 p-4">
-          <div className="bg-[#11161d] border border-[#3898ec] w-full max-w-lg p-4 shadow-2xl font-mono text-xs">
-            <div className="flex items-center justify-between border-b border-[#212832] pb-2 mb-3">
+        <div className="fixed inset-0 bg-black/50 z-50 pointer-events-none">
+          <div
+            id="media-detail-modal"
+            style={
+              modalPosition
+                ? { top: `${modalPosition.y}px`, left: `${modalPosition.x}px`, transform: 'none' }
+                : { top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }
+            }
+            className="fixed bg-[#11161d] border border-[#3898ec] w-full max-w-lg shadow-2xl font-mono text-xs flex flex-col max-h-[85vh] pointer-events-auto select-none"
+          >
+            {/* Draggable Header */}
+            <div
+              onMouseDown={handleMouseDown}
+              className="flex items-center justify-between border-b border-[#212832] p-2.5 cursor-move bg-[#151b22]"
+            >
               <div className="flex items-center space-x-2">
+                <GripHorizontal className="w-4 h-4 text-[#3898ec]" />
                 <span className="text-[#3898ec] font-bold text-xs">[{selectedItem.category}]</span>
-                <span className="text-[#e2e8f0] font-bold text-sm">{selectedItem.title}</span>
+                <span className="text-[#e2e8f0] font-bold text-sm truncate max-w-[280px]">{selectedItem.title}</span>
               </div>
               <button
                 onClick={() => setSelectedItem(null)}
@@ -201,7 +373,8 @@ export const MediaVaultBuffer: React.FC = () => {
               </button>
             </div>
 
-            <div className="space-y-2.5 text-[11px]">
+            {/* Scrollable Body */}
+            <div className="flex-1 overflow-y-auto p-3 space-y-2.5 text-[11px]">
               <div className="grid grid-cols-2 gap-2 bg-[#0c0f13] p-2 border border-[#212832]">
                 <div>
                   <span className="text-[#6b7a8d] block text-[10px]">CREATOR / ARTIST:</span>
@@ -209,7 +382,21 @@ export const MediaVaultBuffer: React.FC = () => {
                 </div>
                 <div>
                   <span className="text-[#6b7a8d] block text-[10px]">STATUS:</span>
-                  <span className="text-[#f08c00] font-semibold">{selectedItem.status}</span>
+                  {selectedItem.category === 'MANGA' ? (
+                    <select
+                      value={selectedItem.readingStatus || selectedItem.status || 'PLAN_TO_READ'}
+                      onChange={(e) => handleUpdateReadingStatus(e.target.value)}
+                      className="bg-[#11161d] border border-[#212832] text-[#f08c00] text-[10px] px-1 py-0.5 outline-none focus:border-[#3898ec]"
+                    >
+                      <option value="PLAN_TO_READ">PLAN TO READ</option>
+                      <option value="READING">READING</option>
+                      <option value="COMPLETED">COMPLETED</option>
+                      <option value="ON_HOLD">ON HOLD</option>
+                      <option value="DROPPED">DROPPED</option>
+                    </select>
+                  ) : (
+                    <span className="text-[#f08c00] font-semibold">{selectedItem.status}</span>
+                  )}
                 </div>
                 <div>
                   <span className="text-[#6b7a8d] block text-[10px]">PROGRESS / METRICS:</span>
@@ -220,6 +407,28 @@ export const MediaVaultBuffer: React.FC = () => {
                   <span className="text-[#3fb950] font-semibold">{selectedItem.visibility}</span>
                 </div>
               </div>
+
+              {/* Active Reading Bookmark Quick Launcher */}
+              {selectedItem.category === 'MANGA' && selectedItem.lastReadChapter && (
+                <div className="bg-[#11161d] p-2 border border-[#3898ec] flex items-center justify-between">
+                  <div className="flex items-center space-x-2">
+                    <Bookmark className="w-4 h-4 text-[#3898ec]" />
+                    <div>
+                      <span className="text-[#6b7a8d] block text-[9px] uppercase">Active Reading Bookmark:</span>
+                      <span className="text-[#3898ec] font-bold">
+                        Chapter {selectedItem.lastReadChapter} (Page {(selectedItem.lastReadPage || 0) + 1})
+                      </span>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => handleContinueReading(selectedItem)}
+                    className="apex-btn-primary py-1 px-3 text-[10px] flex items-center space-x-1"
+                  >
+                    <BookOpen className="w-3 h-3" />
+                    <span>CONTINUE READING</span>
+                  </button>
+                </div>
+              )}
 
               {selectedItem.description && (
                 <div>
@@ -237,7 +446,24 @@ export const MediaVaultBuffer: React.FC = () => {
                     <span className="text-[#3898ec] font-bold text-[10px] uppercase">
                       CHAPTER CATALOG ({itemChapters.length})
                     </span>
-                    {loadingChapters && <RefreshCw className="w-3 h-3 text-[#3898ec] animate-spin" />}
+                    <div className="flex items-center space-x-2">
+                      {itemChapters.some((c) => !c.downloaded) && (
+                        <button
+                          onClick={handleHarvestAllItemChapters}
+                          disabled={harvestAllStatus !== null}
+                          className="apex-btn-primary py-0.5 px-2 text-[9px] flex items-center space-x-1 disabled:opacity-50"
+                          title="Harvest all un-downloaded chapters"
+                        >
+                          <DownloadCloud className={`w-3 h-3 ${harvestAllStatus ? 'animate-bounce' : ''}`} />
+                          <span>
+                            {harvestAllStatus
+                              ? `DOWNLOADING (${harvestAllStatus.current}/${harvestAllStatus.total})...`
+                              : `DOWNLOAD ALL (${itemChapters.filter((c) => !c.downloaded).length})`}
+                          </span>
+                        </button>
+                      )}
+                      {loadingChapters && <RefreshCw className="w-3 h-3 text-[#3898ec] animate-spin" />}
+                    </div>
                   </div>
                   <div className="max-h-48 overflow-y-auto bg-[#0c0f13] border border-[#212832]">
                     {itemChapters.length === 0 && !loadingChapters ? (
@@ -248,9 +474,10 @@ export const MediaVaultBuffer: React.FC = () => {
                           <tr>
                             <th className="w-12">CH #</th>
                             <th>TITLE</th>
+                            <th className="w-12 text-center">READ</th>
                             <th className="w-16">PAGES</th>
                             <th className="w-20">STATUS</th>
-                            <th className="w-24 text-center">ACTION</th>
+                            <th className="w-28 text-center">ACTION</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -259,6 +486,19 @@ export const MediaVaultBuffer: React.FC = () => {
                               <td className="font-bold text-[#3898ec]">{ch.chapterNumber}</td>
                               <td className="text-[#e2e8f0] truncate max-w-[140px]">
                                 {ch.title || `Chapter ${ch.chapterNumber}`}
+                              </td>
+                              <td className="text-center">
+                                <button
+                                  onClick={() => handleToggleChapterRead(ch.id)}
+                                  className="text-[10px] hover:scale-110 transition-transform"
+                                  title={ch.isRead ? "Mark as unread" : "Mark as read"}
+                                >
+                                  {ch.isRead ? (
+                                    <CheckCircle2 className="w-3.5 h-3.5 text-[#3fb950] inline" />
+                                  ) : (
+                                    <span className="text-[#6b7a8d] text-[10px]">-</span>
+                                  )}
+                                </button>
                               </td>
                               <td className="text-[#8a95a5]">{ch.pageCount || '-'}</td>
                               <td>
@@ -273,31 +513,42 @@ export const MediaVaultBuffer: React.FC = () => {
                                 </span>
                               </td>
                               <td className="text-center">
-                                {ch.downloaded ? (
-                                  <button
-                                    onClick={() => {
-                                      setSelectedItem(null);
-                                      openReaderForChapter(ch.id);
-                                    }}
-                                    className="apex-btn-primary py-0.2 px-2 text-[9px] flex items-center justify-center space-x-1 w-full"
-                                  >
-                                    <BookOpen className="w-2.5 h-2.5" />
-                                    <span>READ</span>
-                                  </button>
-                                ) : (
-                                  <button
-                                    onClick={() => handleHarvestChapter(ch.id)}
-                                    disabled={harvestingChapterId === ch.id}
-                                    className="apex-btn-secondary py-0.2 px-1 text-[9px] flex items-center justify-center space-x-1 w-full disabled:opacity-50"
-                                  >
-                                    <DownloadCloud
-                                      className={`w-2.5 h-2.5 ${
-                                        harvestingChapterId === ch.id ? 'animate-bounce text-[#f08c00]' : ''
-                                      }`}
-                                    />
-                                    <span>{harvestingChapterId === ch.id ? 'HARVESTING' : 'HARVEST'}</span>
-                                  </button>
-                                )}
+                                <div className="flex items-center space-x-1 justify-center">
+                                  {ch.downloaded ? (
+                                    <>
+                                      <button
+                                        onClick={() => {
+                                          setSelectedItem(null);
+                                          openReaderForChapter(ch.id);
+                                        }}
+                                        className="apex-btn-primary py-0.2 px-2 text-[9px] flex items-center justify-center space-x-1 flex-1"
+                                      >
+                                        <BookOpen className="w-2.5 h-2.5" />
+                                        <span>READ</span>
+                                      </button>
+                                      <button
+                                        onClick={() => handlePackageOrDownloadCbz(ch)}
+                                        className="apex-btn-secondary py-0.2 px-1 text-[9px] text-[#f08c00] border-[#f08c00] hover:bg-[#f08c00] hover:text-black"
+                                        title={ch.cbzPath ? "Download .CBZ archive" : "Package to .CBZ archive"}
+                                      >
+                                        <Archive className="w-2.5 h-2.5" />
+                                      </button>
+                                    </>
+                                  ) : (
+                                    <button
+                                      onClick={() => handleHarvestChapter(ch.id)}
+                                      disabled={harvestingChapterId === ch.id}
+                                      className="apex-btn-secondary py-0.2 px-1 text-[9px] flex items-center justify-center space-x-1 w-full disabled:opacity-50"
+                                    >
+                                      <DownloadCloud
+                                        className={`w-2.5 h-2.5 ${
+                                          harvestingChapterId === ch.id ? 'animate-bounce text-[#f08c00]' : ''
+                                        }`}
+                                      />
+                                      <span>{harvestingChapterId === ch.id ? 'HARVESTING' : 'HARVEST'}</span>
+                                    </button>
+                                  )}
+                                </div>
                               </td>
                             </tr>
                           ))}
@@ -313,7 +564,16 @@ export const MediaVaultBuffer: React.FC = () => {
               </div>
             </div>
 
-            <div className="flex justify-end pt-3 border-t border-[#212832] mt-3">
+            {/* Footer with Delete and Close */}
+            <div className="flex justify-between items-center p-2.5 border-t border-[#212832] bg-[#0e1217]">
+              <button
+                onClick={() => handleDeleteMedia(selectedItem)}
+                disabled={isDeleting}
+                className="apex-btn-secondary px-3 py-1 text-[#e05656] border-[#e05656] hover:bg-[#e05656] hover:text-white flex items-center space-x-1"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>{isDeleting ? 'DELETING...' : 'DELETE MEDIA'}</span>
+              </button>
               <button
                 onClick={() => setSelectedItem(null)}
                 className="apex-btn-secondary px-3 py-1"

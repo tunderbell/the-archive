@@ -6,10 +6,12 @@ import react from '@vitejs/plugin-react';
  * Sets up the dev server on port 3000 and reverse-proxies /api and /ws (WebSocket STOMP)
  * directly to the Spring Boot backend on port 61069.
  *
+ * base: './' ensures relative asset paths (./assets/...) for Electron desktop builds.
  * Defines global: 'window' to polyfill the Node.js global object for older CommonJS
  * libraries such as sockjs-client.
  */
 export default defineConfig({
+  base: './',
   plugins: [react()],
   define: {
     global: 'window',
