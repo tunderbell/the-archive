@@ -24,5 +24,21 @@ public record ChapterPagesDto(
         String chapterTitle,
         boolean downloaded,
         int pageCount,
-        List<String> pageFiles
-) {}
+        List<String> pageFiles,
+        boolean isRead,
+        Integer lastReadPage,
+        String cbzPath
+) {
+    public ChapterPagesDto(
+            UUID chapterId,
+            UUID mangaId,
+            String seriesTitle,
+            Double chapterNumber,
+            String chapterTitle,
+            boolean downloaded,
+            int pageCount,
+            List<String> pageFiles
+    ) {
+        this(chapterId, mangaId, seriesTitle, chapterNumber, chapterTitle, downloaded, pageCount, pageFiles, false, 0, null);
+    }
+}

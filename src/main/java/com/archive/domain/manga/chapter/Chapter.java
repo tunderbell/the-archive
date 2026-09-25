@@ -44,6 +44,13 @@ public class Chapter {
 
     private Integer pageCount;
 
+    private boolean isRead = false;
+
+    private Integer lastReadPage = 0;
+
+    @Column(columnDefinition = "TEXT")
+    private String cbzPath;
+
     @CreationTimestamp
     @Column(name = "date_added", updatable = false, columnDefinition = "TIMESTAMP WITH TIME ZONE")
     private OffsetDateTime dateAdded;

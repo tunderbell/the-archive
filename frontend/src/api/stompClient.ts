@@ -32,9 +32,14 @@ class ArchiveStompClient {
   private subscriptions: Map<string, QueuedSubscription> = new Map();
 
   constructor() {
+    const wsUrl =
+      typeof window !== 'undefined' && window.location.protocol === 'file:'
+        ? 'http://localhost:61069/ws'
+        : '/ws';
+
     this.client = new Client({
-      // We supply a webSocketFactory function using SockJS to point to our reverse proxy /ws
-      webSocketFactory: () => new SockJS('/ws'),
+      // We supply a webSocketFactory function using SockJS to point to our reverse proxy /ws or direct backend in Electron
+      webSocketFactory: () => new SockJS(wsUrl),
       debug: (_msg: string) => {
         // Uncomment for deep frame debugging:
         // console.debug('[STOMP Frame]:', _msg);

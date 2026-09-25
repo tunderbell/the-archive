@@ -22,6 +22,10 @@ import {
   RefreshCw,
   BookOpen,
   Layers,
+  Maximize2,
+  Minimize2,
+  CheckCircle2,
+  Archive,
 } from 'lucide-react';
 
 export const ReaderBuffer: React.FC = () => {
@@ -33,6 +37,10 @@ export const ReaderBuffer: React.FC = () => {
   const [currentPage, setCurrentPage] = useState<number>(0);
   const [readingMode, setReadingMode] = useState<'PAGED' | 'WEBTOON'>('PAGED');
   const [zoomMode, setZoomMode] = useState<'FIT_WIDTH' | 'FIT_HEIGHT' | 'ORIGINAL'>('FIT_WIDTH');
+  const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
+  const [isChapterRead, setIsChapterRead] = useState<boolean>(false);
+  const [isPackagingCbz, setIsPackagingCbz] = useState<boolean>(false);
+  const [resumeNotice, setResumeNotice] = useState<string | null>(null);
 
   // Loading & Action State
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -50,10 +58,19 @@ export const ReaderBuffer: React.FC = () => {
   const loadChapter = useCallback(async (chapterId: string) => {
     setIsLoading(true);
     setHarvestStatus(null);
-    setCurrentPage(0);
+    setResumeNotice(null);
     try {
       const data = await apiClient.getChapterPages(chapterId);
       setChapterData(data);
+      setIsChapterRead(!!data.isRead);
+
+      if (data.lastReadPage && data.lastReadPage > 0 && data.pageFiles && data.lastReadPage < data.pageFiles.length) {
+        setCurrentPage(data.lastReadPage);
+        setResumeNotice(`Resumed at Page ${data.lastReadPage + 1}`);
+        setTimeout(() => setResumeNotice(null), 3500);
+      } else {
+        setCurrentPage(0);
+      }
 
       // If chapter belongs to a manga, fetch all chapters for selector dropdown
       if (data.mangaId) {
@@ -108,11 +125,37 @@ export const ReaderBuffer: React.FC = () => {
       if (e.key === 'w' || e.key === 'W') {
         setReadingMode((prev) => (prev === 'PAGED' ? 'WEBTOON' : 'PAGED'));
       }
+
+      if (e.key === 'f' || e.key === 'F') {
+        toggleFullscreen();
+      }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [readingMode, chapterData, currentPage]);
+
+  const toggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      if (containerRef.current?.requestFullscreen) {
+        containerRef.current.requestFullscreen().catch(() => {});
+      }
+      setIsFullscreen(true);
+    } else {
+      if (document.exitFullscreen) {
+        document.exitFullscreen().catch(() => {});
+      }
+      setIsFullscreen(false);
+    }
+  };
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(Boolean(document.fullscreenElement));
+    };
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, []);
 
   const handleNextPage = () => {
     if (!chapterData) return;
@@ -182,6 +225,53 @@ export const ReaderBuffer: React.FC = () => {
     }
   };
 
+  // Debounced auto-save reading progress on page changes
+  useEffect(() => {
+    if (!chapterData || !activeChapterId || !chapterData.downloaded) return;
+    const isCompleted = chapterData.pageFiles.length > 0 && currentPage >= chapterData.pageFiles.length - 1;
+    if (isCompleted && !isChapterRead) {
+      setIsChapterRead(true);
+    }
+    const timer = setTimeout(() => {
+      apiClient.saveReadingProgress(activeChapterId, currentPage, isCompleted ? true : undefined).catch(() => {});
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, [currentPage, activeChapterId, chapterData]);
+
+  // Toggle chapter read status
+  const handleToggleRead = async () => {
+    if (!activeChapterId) return;
+    try {
+      const updated = await apiClient.toggleChapterRead(activeChapterId);
+      setIsChapterRead(updated.isRead);
+      setAllChapters((prev) =>
+        prev.map((c) => (c.id === activeChapterId ? { ...c, isRead: updated.isRead } : c))
+      );
+    } catch (err: any) {
+      console.error('Failed to toggle read state:', err);
+    }
+  };
+
+  // Package or Download CBZ
+  const handlePackageOrDownloadCbz = async () => {
+    if (!activeChapterId || !chapterData) return;
+    if (chapterData.cbzPath) {
+      window.open(apiClient.getCbzDownloadUrl(activeChapterId), '_blank');
+      return;
+    }
+    setIsPackagingCbz(true);
+    try {
+      const res = await apiClient.packageChapterCbz(activeChapterId);
+      setChapterData((prev) => (prev ? { ...prev, cbzPath: res.cbzPath } : null));
+      setSystemLauncherMsg(`Packaged: ${res.fileName}`);
+      setTimeout(() => setSystemLauncherMsg(null), 4000);
+    } catch (err: any) {
+      alert(`Failed to package CBZ: ${err.message}`);
+    } finally {
+      setIsPackagingCbz(false);
+    }
+  };
+
   // Render Image scaling class
   const getImageFitClass = () => {
     switch (zoomMode) {
@@ -198,7 +288,9 @@ export const ReaderBuffer: React.FC = () => {
   return (
     <div
       ref={containerRef}
-      className="h-full w-full bg-[#0a0d11] text-[#e2e8f0] flex flex-col font-mono text-xs overflow-hidden select-none relative"
+      className={`w-full bg-[#0a0d11] text-[#e2e8f0] flex flex-col font-mono text-xs overflow-hidden select-none ${
+        isFullscreen ? 'fixed inset-0 z-[9999] h-screen w-screen' : 'h-full relative'
+      }`}
     >
       {/* 1. Tactical APEX Reader Header Bar */}
       <div className="bg-[#151b22] border-b border-[#212832] px-2 py-1.5 flex items-center justify-between flex-wrap gap-1 z-30">
@@ -310,6 +402,34 @@ export const ReaderBuffer: React.FC = () => {
           {systemLauncherMsg && (
             <span className="text-[9px] text-[#f08c00] animate-pulse font-bold">{systemLauncherMsg}</span>
           )}
+
+          {/* Read / Unread Status Toggle */}
+          {chapterData && (
+            <button
+              onClick={handleToggleRead}
+              className={`apex-btn-secondary flex items-center space-x-1 py-0.5 px-2 text-[10px] ${
+                isChapterRead ? 'text-[#3fb950] border-[#3fb950]' : 'text-[#8a95a5]'
+              }`}
+              title={isChapterRead ? 'Mark as Unread' : 'Mark as Read'}
+            >
+              <CheckCircle2 className={`w-3 h-3 ${isChapterRead ? 'text-[#3fb950]' : 'text-[#6b7a8d]'}`} />
+              <span>{isChapterRead ? 'READ' : 'MARK READ'}</span>
+            </button>
+          )}
+
+          {/* Package or Download CBZ */}
+          {chapterData?.downloaded && (
+            <button
+              onClick={handlePackageOrDownloadCbz}
+              disabled={isPackagingCbz}
+              className="apex-btn-secondary flex items-center space-x-1 py-0.5 px-2 text-[10px] disabled:opacity-30 disabled:cursor-not-allowed"
+              title={chapterData.cbzPath ? 'Download packaged .CBZ file' : 'Package pages into .CBZ comic archive'}
+            >
+              <Archive className="w-3 h-3 text-[#f08c00]" />
+              <span>{isPackagingCbz ? 'PACKAGING...' : (chapterData.cbzPath ? 'DOWNLOAD CBZ' : 'PACKAGE CBZ')}</span>
+            </button>
+          )}
+
           <button
             onClick={handleOpenExternal}
             disabled={!chapterData?.downloaded}
@@ -319,8 +439,26 @@ export const ReaderBuffer: React.FC = () => {
             <ExternalLink className="w-3 h-3" />
             <span>SYSTEM VIEWER</span>
           </button>
+          <button
+            onClick={toggleFullscreen}
+            className={`apex-btn-secondary flex items-center space-x-1 py-0.5 px-2 text-[10px] ${
+              isFullscreen ? 'text-[#3898ec] border-[#3898ec]' : ''
+            }`}
+            title={isFullscreen ? 'Exit Fullscreen (F)' : 'Fullscreen View (F)'}
+          >
+            {isFullscreen ? <Minimize2 className="w-3 h-3" /> : <Maximize2 className="w-3 h-3" />}
+            <span>{isFullscreen ? 'EXIT FULLSCREEN' : 'FULLSCREEN'}</span>
+          </button>
         </div>
       </div>
+
+      {/* Auto-Resume Toast Notification Banner */}
+      {resumeNotice && (
+        <div className="absolute top-10 left-1/2 -translate-x-1/2 z-40 bg-[#11161d] border border-[#3898ec] text-[#3898ec] px-3 py-1 text-[11px] font-bold shadow-2xl flex items-center space-x-1.5 animate-bounce">
+          <span>🔖</span>
+          <span>{resumeNotice.toUpperCase()}</span>
+        </div>
+      )}
 
       {/* 2. Main Canvas View */}
       <div className="flex-1 relative overflow-auto bg-[#080b0f] flex items-center justify-center p-1">

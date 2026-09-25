@@ -75,4 +75,14 @@ public class GameController {
     public ResponseEntity<VideoGames> updatePlayStatus(@PathVariable UUID id, @RequestParam GameStatus status) {
         return ResponseEntity.ok(gameService.updatePlayStatus(id, status));
     }
+
+    /**
+     * Deletes a game record by its unique UUID.
+     * Example: DELETE /api/games/{id}
+     */
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> deleteGame(@PathVariable UUID id) {
+        gameService.deleteGame(id);
+        return ResponseEntity.noContent().build();
+    }
 }

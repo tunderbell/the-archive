@@ -46,6 +46,11 @@ public class Manga extends BaseMedia {
     
     private boolean isAdult;
 
+    private Double lastReadChapter;
+    private Integer lastReadPage;
+    private OffsetDateTime lastReadTimestamp;
+    private String readingStatus = "PLAN_TO_READ";
+
     // CSS Selector Overrides (Area 4: User-Defined Scrapers)
     private String customImageSelector;
     private String customChapterSelector;

@@ -67,12 +67,16 @@ public class ScraperController {
      * Example: POST /api/scraper/scout with body: {"url": "https://asurascans.com/solo-leveling"}
      */
     @PostMapping("/scout")
-    public ResponseEntity<Manga> scoutSeries(@RequestBody Map<String, String> payload) throws Exception {
+    public ResponseEntity<?> scoutSeries(@RequestBody Map<String, String> payload) {
         String url = payload.get("url");
         if (url == null || url.isBlank()) {
-            return ResponseEntity.badRequest().build();
+            return ResponseEntity.badRequest().body(Map.of("error", "URL parameter is required"));
         }
-        return ResponseEntity.ok(scraperService.scoutAndRegisterSeries(url));
+        try {
+            return ResponseEntity.ok(scraperService.scoutAndRegisterSeries(url));
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(Map.of("error", e.getMessage() != null ? e.getMessage() : "Scouting failed"));
+        }
     }
 
     /**
@@ -80,8 +84,12 @@ public class ScraperController {
      * Example: POST /api/scraper/harvest/{chapterId}
      */
     @PostMapping("/harvest/{chapterId}")
-    public ResponseEntity<Chapter> harvestChapter(@PathVariable UUID chapterId) throws Exception {
-        return ResponseEntity.ok(scraperService.harvestChapter(chapterId));
+    public ResponseEntity<?> harvestChapter(@PathVariable UUID chapterId) {
+        try {
+            return ResponseEntity.ok(scraperService.harvestChapter(chapterId));
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(Map.of("error", e.getMessage() != null ? e.getMessage() : "Harvesting failed"));
+        }
     }
 
     /**
@@ -97,5 +105,19 @@ public class ScraperController {
         boolean requiresJs = Boolean.parseBoolean(String.valueOf(payload.getOrDefault("requiresJs", "false")));
 
         return ResponseEntity.ok(scraperService.testSelectors(url, titleSelector, chapterListSelector, imageSelector, requiresJs));
+    }
+
+    /**
+     * Proxies a target webpage with injected APEX visual inspector scripts
+     * for point-and-click selector discovery inside an iframe.
+     * Example: GET /api/scraper/live-inspect-proxy?url=https://asuracomic.net/...
+     */
+    @GetMapping(value = "/live-inspect-proxy", produces = "text/html;charset=UTF-8")
+    public ResponseEntity<String> liveInspectProxy(@RequestParam String url) {
+        try {
+            return ResponseEntity.ok(scraperService.generateLiveInspectHtml(url));
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body("<div style='background:#11161d;color:#f08c00;padding:20px;font-family:monospace;'>FAILED TO PROXY TARGET URL: " + e.getMessage() + "</div>");
+        }
     }
 }
