@@ -181,16 +181,13 @@ export const ScraperMonitorBuffer: React.FC = () => {
       } else {
         setStatusMessage({ text: `Scouted "${result.title}", no chapters parsed.` });
       }
-    } catch {
-      // Offline / demonstrative scout fallback
-      setScoutedSeries({ title: 'Solo Leveling', author: 'Chugong' });
-      setScoutedChapters([
-        { id: 'ch-179', chapterNumber: 179, title: 'Chapter 179 - Epilogue', sourceUrl: 'https://asuracomic.net/series/solo-leveling/chapter-179' },
-        { id: 'ch-178', chapterNumber: 178, title: 'Chapter 178', sourceUrl: 'https://asuracomic.net/series/solo-leveling/chapter-178' },
-        { id: 'ch-177.5', chapterNumber: 177.5, title: 'Chapter 177.5 - Side Story', sourceUrl: 'https://asuracomic.net/series/solo-leveling/chapter-177-5' },
-        { id: 'ch-177', chapterNumber: 177, title: 'Chapter 177', sourceUrl: 'https://asuracomic.net/series/solo-leveling/chapter-177' },
-      ]);
-      setStatusMessage({ text: `Catalog preview: 4 chapters extracted.` });
+    } catch (err: any) {
+      console.error('[Scout] Error during scout operation:', err);
+      setStatusMessage({
+        text: `Scout failed for "${targetUrl}": ${err?.message || 'Server error or target unreachable'}`,
+        error: true,
+      });
+      setScoutedChapters([]);
     } finally {
       setIsScouting(false);
     }
@@ -857,7 +854,7 @@ export const ScraperMonitorBuffer: React.FC = () => {
               <div className="flex-1 bg-white relative rounded overflow-hidden">
                 <iframe
                   key={inspectorFrameKey}
-                  src={`/api/scraper/live-inspect-proxy?url=${encodeURIComponent(wizardUrl)}`}
+                  src={`${apiClient.getBaseUrl()}/api/scraper/live-inspect-proxy?url=${encodeURIComponent(wizardUrl)}`}
                   title="Live Webpage Inspector"
                   className="w-full h-full border-0"
                   sandbox="allow-scripts allow-same-origin allow-forms"

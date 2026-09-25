@@ -116,6 +116,68 @@ public class MangaController {
         return ResponseEntity.ok(Map.of("status", "SUCCESS", "message", "Opened in system viewer"));
     }
 
+    /**
+     * Updates reading bookmark and read state for a chapter.
+     * Example: POST /api/manga/chapters/{chapterId}/progress
+     */
+    @PostMapping("/chapters/{chapterId}/progress")
+    public ResponseEntity<Chapter> updateReadingProgress(
+            @PathVariable UUID chapterId,
+            @RequestBody Map<String, Object> payload) {
+        int page = payload.get("page") != null ? ((Number) payload.get("page")).intValue() : 0;
+        Boolean isRead = payload.get("isRead") != null ? (Boolean) payload.get("isRead") : null;
+        return ResponseEntity.ok(mangaService.updateReadingProgress(chapterId, page, isRead));
+    }
+
+    /**
+     * Toggles whether a chapter is marked as read or unread.
+     * Example: POST /api/manga/chapters/{chapterId}/read-toggle
+     */
+    @PostMapping("/chapters/{chapterId}/read-toggle")
+    public ResponseEntity<Chapter> toggleChapterRead(@PathVariable UUID chapterId) {
+        return ResponseEntity.ok(mangaService.toggleChapterRead(chapterId));
+    }
+
+    /**
+     * Updates the user's reading status for a series (e.g. READING, COMPLETED, PLAN_TO_READ).
+     * Example: POST /api/manga/{id}/reading-status
+     */
+    @PostMapping("/{id}/reading-status")
+    public ResponseEntity<Manga> updateReadingStatus(
+            @PathVariable UUID id,
+            @RequestBody Map<String, String> payload) {
+        String status = payload.getOrDefault("status", "READING");
+        return ResponseEntity.ok(mangaService.updateReadingStatus(id, status));
+    }
+
+    /**
+     * Packages downloaded chapter pages into a standardized .cbz comic archive.
+     * Example: POST /api/manga/chapters/{chapterId}/package-cbz
+     */
+    @PostMapping("/chapters/{chapterId}/package-cbz")
+    public ResponseEntity<Map<String, Object>> packageChapterCbz(@PathVariable UUID chapterId) throws IOException {
+        java.nio.file.Path cbzFile = mangaService.packageChapterToCbz(chapterId);
+        return ResponseEntity.ok(Map.of(
+                "status", "SUCCESS",
+                "cbzPath", cbzFile.toString(),
+                "fileName", cbzFile.getFileName().toString()
+        ));
+    }
+
+    /**
+     * Downloads the chapter's .cbz archive directly.
+     * Example: GET /api/manga/chapters/{chapterId}/cbz
+     */
+    @GetMapping("/chapters/{chapterId}/cbz")
+    public ResponseEntity<Resource> downloadChapterCbz(@PathVariable UUID chapterId) {
+        Resource resource = mangaService.getCbzResource(chapterId);
+        String filename = resource.getFilename() != null ? resource.getFilename() : "chapter.cbz";
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_TYPE, "application/vnd.comicbook+zip")
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
+                .body(resource);
+    }
+
     private String determineContentType(String filename) {
         String lower = filename.toLowerCase();
         if (lower.endsWith(".png")) return "image/png";
