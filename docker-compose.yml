@@ -1,0 +1,21 @@
+services:
+  the-archive:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: the-archive:latest
+    container_name: the-archive
+    restart: unless-stopped
+    ports:
+      - "61069:61069"
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:sqlite:/app/data/archive_vault.db
+      - ARCHIVE_STORAGE_VAULT_PATH=/app/data/archive_vault
+      - CHROME_BIN=/usr/bin/chromium
+    volumes:
+      - archive_data:/app/data
+    shm_size: '2gb'
+
+volumes:
+  archive_data:
+    name: the_archive_vault_data
