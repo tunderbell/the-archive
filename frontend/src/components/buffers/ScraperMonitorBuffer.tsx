@@ -16,7 +16,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Search, Download, CheckCircle2, AlertCircle, Wrench, RefreshCw, Layers, Eye, MousePointer, X } from 'lucide-react';
-import { apiClient, TestSelectorResponse } from '../../api/apiClient';
+import { apiClient, TestSelectorResponse, ScraperTemplateDto } from '../../api/apiClient';
 import { stompClient } from '../../api/stompClient';
 
 interface DiscoveredChapter {
@@ -38,11 +38,28 @@ interface HarvestingJob {
 export const ScraperMonitorBuffer: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'COCKPIT' | 'WIZARD'>('COCKPIT');
 
+  // --- Saved Recipes State ---
+  const [savedRecipes, setSavedRecipes] = useState<ScraperTemplateDto[]>([]);
+
+  const loadSavedRecipes = async () => {
+    try {
+      const templates = await apiClient.getAllTemplates();
+      setSavedRecipes(templates);
+    } catch {
+      // Ignore
+    }
+  };
+
+  useEffect(() => {
+    loadSavedRecipes();
+  }, []);
+
   // --- Cockpit State ---
   const [targetUrl, setTargetUrl] = useState('https://asuracomic.net/series/solo-leveling');
   const [isScouting, setIsScouting] = useState(false);
   const [scoutedSeries, setScoutedSeries] = useState<any | null>(null);
   const [scoutedChapters, setScoutedChapters] = useState<DiscoveredChapter[]>([]);
+  const [isHarvestingAll, setIsHarvestingAll] = useState(false);
   const [statusMessage, setStatusMessage] = useState<{ text: string; error?: boolean } | null>(null);
   const [activeJobs, setActiveJobs] = useState<HarvestingJob[]>([
     { id: 'JOB-101', title: 'Solo Leveling Ch 100', progress: 100, status: 'COMPLETED', threads: 0 },
@@ -100,7 +117,9 @@ export const ScraperMonitorBuffer: React.FC = () => {
       if (!payload || !payload.jobId) return;
 
       setActiveJobs((prev) => {
-        const existingIdx = prev.findIndex((j) => j.id === payload.jobId);
+        const existingIdx = prev.findIndex(
+          (j) => j.id === payload.jobId || (payload.chapterId && j.chapterId === payload.chapterId)
+        );
         const updatedJob: HarvestingJob = {
           id: payload.jobId,
           chapterId: payload.chapterId,
@@ -159,24 +178,33 @@ export const ScraperMonitorBuffer: React.FC = () => {
   };
 
   const handleHarvestChapter = async (ch: DiscoveredChapter) => {
-    const jobId = `JOB-${Math.floor(100 + Math.random() * 900)}`;
+    const chapterId = ch.id;
+    const isRealUuid = Boolean(chapterId && chapterId.includes('-') && chapterId.length > 30);
+    const jobId = isRealUuid && chapterId ? `JOB-${chapterId.substring(0, 8).toUpperCase()}` : `JOB-${Math.floor(100 + Math.random() * 900)}`;
     const newJob: HarvestingJob = {
       id: jobId,
-      chapterId: ch.id,
+      chapterId: chapterId,
       title: `${scoutedSeries?.title || 'Series'} Ch ${ch.chapterNumber}`,
       progress: 10,
       status: 'DOWNLOADING',
       threads: 8,
     };
 
-    setActiveJobs((prev) => [newJob, ...prev]);
+    setActiveJobs((prev) => {
+      const exists = prev.some((j) => (chapterId && j.chapterId === chapterId) || j.id === jobId);
+      return exists ? prev : [newJob, ...prev];
+    });
 
     // Dispatch to real backend if entity ID is a UUID
-    if (ch.id && ch.id.includes('-') && ch.id.length > 30) {
+    if (isRealUuid && chapterId) {
       try {
-        await apiClient.harvestChapter(ch.id);
+        await apiClient.harvestChapter(chapterId);
+        setStatusMessage({ text: `✔ Completed harvest: Ch ${ch.chapterNumber} archived to vault.` });
       } catch (err: any) {
         setStatusMessage({ text: `Harvest error: ${err.message}`, error: true });
+        setActiveJobs((prev) =>
+          prev.map((j) => ((chapterId && j.chapterId === chapterId) || j.id === jobId ? { ...j, status: 'FAILED', threads: 0 } : j))
+        );
       }
     } else {
       // Demonstrative progress pipeline animation
@@ -199,6 +227,17 @@ export const ScraperMonitorBuffer: React.FC = () => {
         setStatusMessage({ text: `✔ Completed harvest: Ch ${ch.chapterNumber} archived to vault.` });
       }, 2300);
     }
+  };
+
+  const handleHarvestAllScoutedChapters = async () => {
+    if (scoutedChapters.length === 0) return;
+    setIsHarvestingAll(true);
+    setStatusMessage({ text: `Starting batch harvest of ${scoutedChapters.length} chapters...` });
+    for (const ch of scoutedChapters) {
+      await handleHarvestChapter(ch);
+      await new Promise((r) => setTimeout(r, 600)); // Respectful rate-limiting pause
+    }
+    setIsHarvestingAll(false);
   };
 
   // --- Wizard Handlers ---
@@ -263,6 +302,7 @@ export const ScraperMonitorBuffer: React.FC = () => {
         rateLimitMs: 1200,
       });
       setWizardStatus({ text: `✔ Site recipe for [${wizardDomain}] saved into SQLite vault!` });
+      loadSavedRecipes();
     } catch (err: any) {
       setWizardStatus({ text: `Failed to save: ${err.message}`, error: true });
     } finally {
@@ -309,6 +349,24 @@ export const ScraperMonitorBuffer: React.FC = () => {
           {/* URL Scout Bar */}
           <div className="bg-[#0e1217] border-b border-[#212832] p-2 space-y-2">
             <div className="flex items-center space-x-2">
+              {savedRecipes.length > 0 && (
+                <select
+                  onChange={(e) => {
+                    if (e.target.value) {
+                      setTargetUrl(`https://${e.target.value}/series/`);
+                    }
+                  }}
+                  className="bg-[#0a0d11] border border-[#212832] text-[#8a95a5] px-2 py-1 text-xs outline-none focus:border-[#3898ec]"
+                  defaultValue=""
+                >
+                  <option value="" disabled>-- Recipe Presets --</option>
+                  {savedRecipes.map((r, i) => (
+                    <option key={i} value={r.domainName}>
+                      {r.name} ({r.domainName})
+                    </option>
+                  ))}
+                </select>
+              )}
               <input
                 type="text"
                 value={targetUrl}
@@ -396,8 +454,21 @@ export const ScraperMonitorBuffer: React.FC = () => {
           {/* Discovered Chapter Catalog Queue */}
           <div className="flex-1 overflow-auto p-2">
             <div className="flex items-center justify-between text-[10px] text-[#6b7a8d] uppercase tracking-wider mb-1">
-              <span>Discovered Chapter Queue ({scoutedChapters.length}):</span>
-              {scoutedSeries && <span className="text-[#f08c00] font-bold">{scoutedSeries.title}</span>}
+              <div className="flex items-center space-x-2">
+                <span>Discovered Chapter Queue ({scoutedChapters.length}):</span>
+                {scoutedSeries && <span className="text-[#f08c00] font-bold">{scoutedSeries.title}</span>}
+              </div>
+              {scoutedChapters.length > 0 && (
+                <button
+                  onClick={handleHarvestAllScoutedChapters}
+                  disabled={isHarvestingAll}
+                  className="apex-btn-primary py-0.5 px-2 flex items-center space-x-1.5 disabled:opacity-50"
+                  title="Harvest all discovered chapters"
+                >
+                  <Download className={`w-3 h-3 ${isHarvestingAll ? 'animate-bounce' : ''}`} />
+                  <span>{isHarvestingAll ? 'HARVESTING ALL...' : `HARVEST ALL (${scoutedChapters.length})`}</span>
+                </button>
+              )}
             </div>
 
             {scoutedChapters.length === 0 ? (
@@ -468,6 +539,44 @@ export const ScraperMonitorBuffer: React.FC = () => {
               <span>{wizardStatus.text}</span>
             </div>
           )}
+
+          {/* Preset Recipe Selector */}
+          <div className="bg-[#151b22] border border-[#212832] p-2 flex items-center justify-between flex-wrap gap-2 text-xs">
+            <div className="flex items-center space-x-2">
+              <span className="text-[#3898ec] font-bold text-[10px] uppercase">LOAD PRESET RECIPE:</span>
+              <select
+                onChange={(e) => {
+                  const selected = savedRecipes.find((r) => r.domainName === e.target.value);
+                  if (selected) {
+                    setWizardName(selected.name);
+                    setWizardDomain(selected.domainName);
+                    setTitleSelector(selected.titleSelector || '');
+                    setChapterListSelector(selected.chapterListSelector || '');
+                    setImageSelector(selected.imageSelector || '');
+                    setRequiresJs(selected.requiresJs || false);
+                    setWizardStatus({ text: `✔ Loaded recipe for [${selected.name} (${selected.domainName})]` });
+                  }
+                }}
+                className="bg-[#0a0d11] border border-[#212832] text-[#e2e8f0] px-2 py-0.5 text-xs outline-none focus:border-[#3898ec]"
+                defaultValue=""
+              >
+                <option value="" disabled>-- Select a saved recipe ({savedRecipes.length} available) --</option>
+                {savedRecipes.map((r, i) => (
+                  <option key={i} value={r.domainName}>
+                    {r.name} ({r.domainName})
+                  </option>
+                ))}
+              </select>
+            </div>
+            <button
+              onClick={loadSavedRecipes}
+              className="text-[#6b7a8d] hover:text-[#e2e8f0] text-[10px] flex items-center space-x-1"
+              title="Refresh Saved Recipes"
+            >
+              <RefreshCw className="w-3 h-3" />
+              <span>REFRESH</span>
+            </button>
+          </div>
 
           {/* Form Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 bg-[#11161d] border border-[#212832] p-3">

@@ -24,6 +24,7 @@ import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * ============================================================================
@@ -120,6 +121,9 @@ public class SeleniumHarvester {
         } catch (InterruptedException ie) {
             Thread.currentThread().interrupt();
             throw new RuntimeException("Scraping execution interrupted", ie);
+        } catch (Exception e) {
+            log.warn("Dynamic Selenium extraction encountered an issue on [{}]: {}", chapterUrl, e.getMessage());
+            return new ArrayList<>();
         } finally {
             // CRITICAL: Always quit the driver to terminate the external chromedriver.exe and
             // chrome.exe child processes, preventing zombie process memory leaks.
@@ -129,14 +133,30 @@ public class SeleniumHarvester {
 
     /**
      * Downloads an entire list of image URLs concurrently to a local directory
-     * using Java 21 Virtual Threads.
+     * using Java 21 Virtual Threads and spoofed browser headers.
      *
      * @param imageUrls List of remote web image URLs.
      * @param targetDir Local filesystem directory to write files into.
+     * @param referer   Web address to set as HTTP Referer header to bypass CDN anti-hotlinking.
+    /**
+     * Downloads an entire list of image URLs concurrently to a local directory
+     * using Java 21 Virtual Threads, spoofed browser headers, and a live ASCII terminal progress bar.
+     *
+     * @param imageUrls     List of remote web image URLs.
+     * @param targetDir     Local filesystem directory to write files into.
+     * @param referer       Web address to set as HTTP Referer header to bypass CDN anti-hotlinking.
+     * @param seriesTitle   Title of the series for console tracking.
+     * @param chapterNumber Number of the chapter for console tracking.
      * @return Number of successfully downloaded pages.
      */
-    public int downloadPagesConcurrently(List<String> imageUrls, Path targetDir) throws Exception {
+    public int downloadPagesConcurrently(List<String> imageUrls, Path targetDir, String referer, String seriesTitle, double chapterNumber) throws Exception {
         Files.createDirectories(targetDir);
+
+        AtomicInteger completedCount = new AtomicInteger(0);
+        AtomicInteger successCount = new AtomicInteger(0);
+        int total = imageUrls.size();
+
+        renderAsciiProgressBar(seriesTitle, chapterNumber, 0, total);
 
         // Java 21: Virtual-thread-per-task executor
         // Every download runs on its own virtual thread without consuming OS platform threads
@@ -152,34 +172,87 @@ public class SeleniumHarvester {
                 Path destination = targetDir.resolve(String.format("%03d%s", pageIndex, extension));
 
                 // Submit each download task to a virtual thread
-                futures.add(executor.submit(() -> downloadSingleImage(imageUrl, destination)));
+                futures.add(executor.submit(() -> {
+                    boolean ok = downloadSingleImage(imageUrl, destination, referer);
+                    if (ok) {
+                        successCount.incrementAndGet();
+                    }
+                    int done = completedCount.incrementAndGet();
+                    renderAsciiProgressBar(seriesTitle, chapterNumber, done, total);
+                    return ok;
+                }));
             }
 
             // Wait for all virtual thread download tasks to complete
-            int successCount = 0;
             for (Future<Boolean> future : futures) {
-                if (future.get()) {
-                    successCount++;
-                }
+                future.get();
             }
 
-            log.info("Successfully harvested [{}/{}] pages into [{}]", successCount, imageUrls.size(), targetDir);
-            return successCount;
+            log.info("Successfully harvested [{}/{}] pages into [{}]", successCount.get(), imageUrls.size(), targetDir);
+            return successCount.get();
+        }
+    }
+
+    public int downloadPagesConcurrently(List<String> imageUrls, Path targetDir, String referer) throws Exception {
+        return downloadPagesConcurrently(imageUrls, targetDir, referer, null, 0);
+    }
+
+    public int downloadPagesConcurrently(List<String> imageUrls, Path targetDir) throws Exception {
+        return downloadPagesConcurrently(imageUrls, targetDir, null, null, 0);
+    }
+
+    /**
+     * Renders a real-time ASCII progress bar in the terminal using standard ASCII characters
+     * safe for all Windows console encodings (e.g. CP1252 / UTF-8).
+     */
+    private synchronized void renderAsciiProgressBar(String seriesTitle, double chapterNumber, int completed, int total) {
+        if (total <= 0) return;
+        int barWidth = 28;
+        int percent = (int) Math.round(((double) completed / total) * 100);
+        int filled = (int) Math.round(((double) completed / total) * barWidth);
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("\r[ARCHIVE-HARVEST] [");
+        for (int i = 0; i < barWidth; i++) {
+            sb.append(i < filled ? "#" : ".");
+        }
+        String chDisplay = (chapterNumber % 1 == 0) ? String.valueOf((int) chapterNumber) : String.valueOf(chapterNumber);
+        sb.append(String.format("] %3d%% (%2d/%2d) | Ch. %-4s", percent, completed, total, chDisplay));
+        if (seriesTitle != null && !seriesTitle.isBlank()) {
+            sb.append(" | ").append(seriesTitle);
+        }
+
+        System.out.print(sb.toString());
+        System.out.flush();
+        if (completed >= total) {
+            System.out.println(" [DONE]");
         }
     }
 
     /**
-     * Streams raw bytes from a remote URL directly into a local file.
+     * Streams raw bytes from a remote URL directly into a local file with browser headers.
      *
      * @param urlString  Remote image web address.
      * @param targetPath Local destination path.
+     * @param referer    Referer header URL.
      * @return true if download succeeded, false otherwise.
      */
-    private boolean downloadSingleImage(String urlString, Path targetPath) {
-        try (InputStream in = URI.create(urlString).toURL().openStream()) {
-            // StandardCopyOption.REPLACE_EXISTING ensures partial/failed downloads are overwritten cleanly
-            Files.copy(in, targetPath, StandardCopyOption.REPLACE_EXISTING);
-            return true;
+    private boolean downloadSingleImage(String urlString, Path targetPath, String referer) {
+        try {
+            java.net.HttpURLConnection conn = (java.net.HttpURLConnection) URI.create(urlString).toURL().openConnection();
+            conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36");
+            if (referer != null && !referer.isBlank()) {
+                conn.setRequestProperty("Referer", referer);
+            }
+            conn.setRequestProperty("Accept", "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8");
+            conn.setConnectTimeout(15_000);
+            conn.setReadTimeout(20_000);
+
+            try (InputStream in = conn.getInputStream()) {
+                // StandardCopyOption.REPLACE_EXISTING ensures partial/failed downloads are overwritten cleanly
+                Files.copy(in, targetPath, StandardCopyOption.REPLACE_EXISTING);
+                return true;
+            }
         } catch (Exception e) {
             log.error("Failed to download image from [{}]: {}", urlString, e.getMessage());
             return false;

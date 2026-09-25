@@ -13,7 +13,7 @@
 import React, { useState, useEffect } from 'react';
 import { apiClient, MediaItemDto, ChapterDto } from '../../api/apiClient';
 import { useScreens } from '../../context/ScreenContext';
-import { Search, RefreshCw, Eye, X, BookOpen, DownloadCloud } from 'lucide-react';
+import { Search, RefreshCw, Eye, X, BookOpen, DownloadCloud, Trash2, GripHorizontal } from 'lucide-react';
 
 export const MediaVaultBuffer: React.FC = () => {
   const { openReaderForChapter } = useScreens();
@@ -23,10 +23,74 @@ export const MediaVaultBuffer: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [selectedItem, setSelectedItem] = useState<MediaItemDto | null>(null);
 
+  // Floating / draggable modal state
+  const [modalPosition, setModalPosition] = useState<{ x: number; y: number } | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragOffset, setDragOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [isDeleting, setIsDeleting] = useState(false);
+
   // Chapter state for selected manga item
   const [itemChapters, setItemChapters] = useState<ChapterDto[]>([]);
   const [loadingChapters, setLoadingChapters] = useState<boolean>(false);
   const [harvestingChapterId, setHarvestingChapterId] = useState<string | null>(null);
+  const [harvestAllStatus, setHarvestAllStatus] = useState<{ current: number; total: number } | null>(null);
+
+  const handleSelectItem = (item: MediaItemDto) => {
+    setSelectedItem(item);
+    setModalPosition(null);
+  };
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest('button')) return;
+    setIsDragging(true);
+    const modalEl = document.getElementById('media-detail-modal');
+    if (modalEl) {
+      const rect = modalEl.getBoundingClientRect();
+      setDragOffset({
+        x: e.clientX - rect.left,
+        y: e.clientY - rect.top,
+      });
+    }
+  };
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isDragging) return;
+      setModalPosition({
+        x: Math.max(10, Math.min(window.innerWidth - 320, e.clientX - dragOffset.x)),
+        y: Math.max(10, Math.min(window.innerHeight - 200, e.clientY - dragOffset.y)),
+      });
+    };
+
+    const handleMouseUp = () => {
+      setIsDragging(false);
+    };
+
+    if (isDragging) {
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
+    }
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isDragging, dragOffset]);
+
+  const handleDeleteMedia = async (item: MediaItemDto) => {
+    if (!window.confirm(`Are you sure you want to permanently delete "${item.title}" from your vault?`)) {
+      return;
+    }
+    setIsDeleting(true);
+    try {
+      await apiClient.deleteMedia(item.category, item.id);
+      setSelectedItem(null);
+      await fetchItems();
+    } catch (err: any) {
+      alert(`Failed to delete media: ${err.message}`);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   const fetchItems = async () => {
     setIsLoading(true);
@@ -79,6 +143,29 @@ export const MediaVaultBuffer: React.FC = () => {
     } finally {
       setHarvestingChapterId(null);
     }
+  };
+
+  const handleHarvestAllItemChapters = async () => {
+    const unharvested = itemChapters.filter((c) => !c.downloaded);
+    if (unharvested.length === 0) return;
+
+    setHarvestAllStatus({ current: 0, total: unharvested.length });
+    for (let i = 0; i < unharvested.length; i++) {
+      const ch = unharvested[i];
+      setHarvestAllStatus({ current: i + 1, total: unharvested.length });
+      setHarvestingChapterId(ch.id);
+      try {
+        await apiClient.harvestChapter(ch.id);
+        if (selectedItem) {
+          const updated = await apiClient.getChaptersForManga(selectedItem.id);
+          setItemChapters(updated);
+        }
+      } catch (err) {
+        console.error(`[MediaVaultBuffer] Batch harvest failed for Ch ${ch.chapterNumber}:`, err);
+      }
+    }
+    setHarvestingChapterId(null);
+    setHarvestAllStatus(null);
   };
 
   const filteredItems = items.filter(
@@ -170,13 +257,23 @@ export const MediaVaultBuffer: React.FC = () => {
                   </span>
                 </td>
                 <td className="text-center">
-                  <button
-                    onClick={() => setSelectedItem(item)}
-                    className="apex-btn-primary flex items-center justify-center space-x-1 w-full py-0.5"
-                  >
-                    <Eye className="w-2.5 h-2.5" />
-                    <span>VIEW</span>
-                  </button>
+                  <div className="flex items-center space-x-1 justify-center">
+                    <button
+                      onClick={() => handleSelectItem(item)}
+                      className="apex-btn-primary flex items-center justify-center space-x-1 py-0.5 px-2"
+                      title="View Details & Chapters"
+                    >
+                      <Eye className="w-2.5 h-2.5" />
+                      <span>VIEW</span>
+                    </button>
+                    <button
+                      onClick={() => handleDeleteMedia(item)}
+                      className="apex-btn-secondary text-[#e05656] hover:bg-[#e05656] hover:text-white p-1"
+                      title="Delete from Vault"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}
@@ -184,14 +281,27 @@ export const MediaVaultBuffer: React.FC = () => {
         </table>
       </div>
 
-      {/* APEX Tactical Detail Modal */}
+      {/* APEX Tactical Detail Floating Modal */}
       {selectedItem && (
-        <div className="absolute inset-0 bg-black/75 flex items-center justify-center z-50 p-4">
-          <div className="bg-[#11161d] border border-[#3898ec] w-full max-w-lg p-4 shadow-2xl font-mono text-xs">
-            <div className="flex items-center justify-between border-b border-[#212832] pb-2 mb-3">
+        <div className="fixed inset-0 bg-black/50 z-50 pointer-events-none">
+          <div
+            id="media-detail-modal"
+            style={
+              modalPosition
+                ? { top: `${modalPosition.y}px`, left: `${modalPosition.x}px`, transform: 'none' }
+                : { top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }
+            }
+            className="fixed bg-[#11161d] border border-[#3898ec] w-full max-w-lg shadow-2xl font-mono text-xs flex flex-col max-h-[85vh] pointer-events-auto select-none"
+          >
+            {/* Draggable Header */}
+            <div
+              onMouseDown={handleMouseDown}
+              className="flex items-center justify-between border-b border-[#212832] p-2.5 cursor-move bg-[#151b22]"
+            >
               <div className="flex items-center space-x-2">
+                <GripHorizontal className="w-4 h-4 text-[#3898ec]" />
                 <span className="text-[#3898ec] font-bold text-xs">[{selectedItem.category}]</span>
-                <span className="text-[#e2e8f0] font-bold text-sm">{selectedItem.title}</span>
+                <span className="text-[#e2e8f0] font-bold text-sm truncate max-w-[280px]">{selectedItem.title}</span>
               </div>
               <button
                 onClick={() => setSelectedItem(null)}
@@ -201,7 +311,8 @@ export const MediaVaultBuffer: React.FC = () => {
               </button>
             </div>
 
-            <div className="space-y-2.5 text-[11px]">
+            {/* Scrollable Body */}
+            <div className="flex-1 overflow-y-auto p-3 space-y-2.5 text-[11px]">
               <div className="grid grid-cols-2 gap-2 bg-[#0c0f13] p-2 border border-[#212832]">
                 <div>
                   <span className="text-[#6b7a8d] block text-[10px]">CREATOR / ARTIST:</span>
@@ -237,7 +348,24 @@ export const MediaVaultBuffer: React.FC = () => {
                     <span className="text-[#3898ec] font-bold text-[10px] uppercase">
                       CHAPTER CATALOG ({itemChapters.length})
                     </span>
-                    {loadingChapters && <RefreshCw className="w-3 h-3 text-[#3898ec] animate-spin" />}
+                    <div className="flex items-center space-x-2">
+                      {itemChapters.some((c) => !c.downloaded) && (
+                        <button
+                          onClick={handleHarvestAllItemChapters}
+                          disabled={harvestAllStatus !== null}
+                          className="apex-btn-primary py-0.5 px-2 text-[9px] flex items-center space-x-1 disabled:opacity-50"
+                          title="Harvest all un-downloaded chapters"
+                        >
+                          <DownloadCloud className={`w-3 h-3 ${harvestAllStatus ? 'animate-bounce' : ''}`} />
+                          <span>
+                            {harvestAllStatus
+                              ? `DOWNLOADING (${harvestAllStatus.current}/${harvestAllStatus.total})...`
+                              : `DOWNLOAD ALL (${itemChapters.filter((c) => !c.downloaded).length})`}
+                          </span>
+                        </button>
+                      )}
+                      {loadingChapters && <RefreshCw className="w-3 h-3 text-[#3898ec] animate-spin" />}
+                    </div>
                   </div>
                   <div className="max-h-48 overflow-y-auto bg-[#0c0f13] border border-[#212832]">
                     {itemChapters.length === 0 && !loadingChapters ? (
@@ -313,7 +441,16 @@ export const MediaVaultBuffer: React.FC = () => {
               </div>
             </div>
 
-            <div className="flex justify-end pt-3 border-t border-[#212832] mt-3">
+            {/* Footer with Delete and Close */}
+            <div className="flex justify-between items-center p-2.5 border-t border-[#212832] bg-[#0e1217]">
+              <button
+                onClick={() => handleDeleteMedia(selectedItem)}
+                disabled={isDeleting}
+                className="apex-btn-secondary px-3 py-1 text-[#e05656] border-[#e05656] hover:bg-[#e05656] hover:text-white flex items-center space-x-1"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>{isDeleting ? 'DELETING...' : 'DELETE MEDIA'}</span>
+              </button>
               <button
                 onClick={() => setSelectedItem(null)}
                 className="apex-btn-secondary px-3 py-1"

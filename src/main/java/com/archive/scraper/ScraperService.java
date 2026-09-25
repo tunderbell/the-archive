@@ -103,26 +103,47 @@ public class ScraperService {
 
         ScrapedSeriesMetadata metadata = jsoupScraper.scrapeSeries(seriesUrl, template);
 
-        // Map DTO to Manga entity
-        Manga manga = new Manga();
-        manga.setTitle(metadata.title());
-        manga.setAuthor(metadata.author());
-        manga.setDescription(metadata.description());
-        manga.setCoverImageUrl(metadata.coverImageUrl());
-        manga.setSourceUrl(seriesUrl);
-        manga.setAdult(metadata.isAdult());
+        if ("Unknown Title".equalsIgnoreCase(metadata.title()) && (metadata.chapters() == null || metadata.chapters().isEmpty())) {
+            throw new IllegalStateException("Scout failed: Could not match title or chapters using current template selectors. Please refine selectors in the CSS Wizard first.");
+        }
 
-        Manga savedManga = mangaService.createManga(manga);
+        // Deduplicate series: check if a manga with the same sourceUrl or title already exists
+        Optional<Manga> existingOpt = mangaService.getAllManga().stream()
+                .filter(m -> (m.getSourceUrl() != null && m.getSourceUrl().equalsIgnoreCase(seriesUrl))
+                          || (metadata.title() != null && m.getTitle() != null && m.getTitle().equalsIgnoreCase(metadata.title())))
+                .findFirst();
+
+        Manga savedManga;
+        if (existingOpt.isPresent()) {
+            savedManga = existingOpt.get();
+            if (metadata.author() != null && !metadata.author().isBlank()) savedManga.setAuthor(metadata.author());
+            if (metadata.description() != null && !metadata.description().isBlank()) savedManga.setDescription(metadata.description());
+            if (metadata.coverImageUrl() != null && !metadata.coverImageUrl().isBlank()) savedManga.setCoverImageUrl(metadata.coverImageUrl());
+            savedManga.setSourceUrl(seriesUrl);
+            savedManga = mangaService.createManga(savedManga);
+            log.info("Found existing series [{}], updated metadata and checking new chapters", savedManga.getTitle());
+        } else {
+            Manga manga = new Manga();
+            manga.setTitle(metadata.title());
+            manga.setAuthor(metadata.author());
+            manga.setDescription(metadata.description());
+            manga.setCoverImageUrl(metadata.coverImageUrl());
+            manga.setSourceUrl(seriesUrl);
+            manga.setAdult(metadata.isAdult());
+            savedManga = mangaService.createManga(manga);
+        }
 
         // Convert DTO chapters to domain Chapter entities
         List<Chapter> chapters = new ArrayList<>();
-        for (ScrapedChapter sc : metadata.chapters()) {
-            Chapter chapter = new Chapter();
-            chapter.setChapterNumber(sc.chapterNumber());
-            chapter.setTitle(sc.title());
-            chapter.setSourceUrl(sc.chapterUrl());
-            chapter.setDownloaded(false);
-            chapters.add(chapter);
+        if (metadata.chapters() != null) {
+            for (ScrapedChapter sc : metadata.chapters()) {
+                Chapter chapter = new Chapter();
+                chapter.setChapterNumber(sc.chapterNumber());
+                chapter.setTitle(sc.title());
+                chapter.setSourceUrl(sc.chapterUrl());
+                chapter.setDownloaded(false);
+                chapters.add(chapter);
+            }
         }
 
         // Delegate deduplication and saving to MangaService
@@ -145,44 +166,66 @@ public class ScraperService {
         Manga manga = chapter.getManga();
         String domain = extractDomain(chapter.getSourceUrl());
         ScraperTemplate template = templateRepository.findByDomainName(domain)
-                .orElseThrow(() -> new IllegalArgumentException("No scraper template found for domain: " + domain));
+                .orElseGet(() -> templateRepository.findAll().stream()
+                        .filter(t -> domain.contains(t.getDomainName()) || t.getDomainName().contains(domain))
+                        .findFirst()
+                        .orElseGet(() -> createDefaultTemplate(domain)));
 
         broadcastProgress(chapterId, manga.getTitle(), chapter.getChapterNumber(), 10, "DOWNLOADING", 8);
 
-        // Determine if images can be scraped via fast Jsoup or need dynamic Selenium
-        List<String> imageUrls;
-        if (!template.isRequiresJs()) {
-            imageUrls = jsoupScraper.scrapeImageUrls(chapter.getSourceUrl(), template, manga.getCustomImageSelector());
-        } else {
-            imageUrls = seleniumHarvester.extractDynamicImageUrls(chapter.getSourceUrl(), template, manga.getCustomImageSelector());
+        try {
+            // Determine if images can be scraped via fast Jsoup or need dynamic Selenium
+            List<String> imageUrls;
+            if (!template.isRequiresJs()) {
+                imageUrls = jsoupScraper.scrapeImageUrls(chapter.getSourceUrl(), template, manga.getCustomImageSelector());
+            } else {
+                imageUrls = seleniumHarvester.extractDynamicImageUrls(chapter.getSourceUrl(), template, manga.getCustomImageSelector());
+            }
+
+            // Fallback: If Jsoup yielded 0 images, attempt dynamic Selenium
+            if (imageUrls.isEmpty()) {
+                log.warn("Jsoup found 0 images for chapter [{}], falling back to Selenium Harvester", chapter.getSourceUrl());
+                imageUrls = seleniumHarvester.extractDynamicImageUrls(chapter.getSourceUrl(), template, manga.getCustomImageSelector());
+            }
+
+            if (imageUrls.isEmpty()) {
+                throw new IllegalStateException("No page images could be extracted for chapter [" + chapter.getSourceUrl() + "]. Please verify the image selector in your domain recipe.");
+            }
+
+            broadcastProgress(chapterId, manga.getTitle(), chapter.getChapterNumber(), 40, "DOWNLOADING", 8);
+
+            // Construct target directory path: {vaultBasePath}/manga/{mangaTitle}/Chapter_{chapterNumber}
+            String sanitizedTitle = sanitizeFilename(manga.getTitle());
+            Path chapterDir = Paths.get(vaultBasePath, "manga", sanitizedTitle, "Chapter_" + chapter.getChapterNumber());
+
+            broadcastProgress(chapterId, manga.getTitle(), chapter.getChapterNumber(), 75, "DOWNLOADING", 8);
+
+            int downloadedCount = seleniumHarvester.downloadPagesConcurrently(
+                    imageUrls,
+                    chapterDir,
+                    chapter.getSourceUrl(),
+                    manga.getTitle(),
+                    chapter.getChapterNumber());
+
+            if (downloadedCount == 0 && !imageUrls.isEmpty()) {
+                throw new IllegalStateException("Failed to stream image bytes from host CDN. Image URLs may be expired or access forbidden.");
+            }
+
+            broadcastProgress(chapterId, manga.getTitle(), chapter.getChapterNumber(), 95, "PACKAGING_CBZ", 1);
+
+            Chapter savedChapter = mangaService.markChapterDownloaded(chapterId, chapterDir.toAbsolutePath().toString(), downloadedCount);
+
+            broadcastProgress(chapterId, manga.getTitle(), chapter.getChapterNumber(), 100, "COMPLETED", 0);
+            workspaceService.recordActivity("HARVESTER", "CHAPTER_HARVESTED",
+                    "Harvested " + manga.getTitle() + " Chapter " + chapter.getChapterNumber() + " (" + downloadedCount + " pages)",
+                    "MANGA", manga.getId());
+
+            return savedChapter;
+        } catch (Exception e) {
+            broadcastProgress(chapterId, manga.getTitle(), chapter.getChapterNumber(), 0, "FAILED", 0);
+            log.error("Harvesting failed for chapter [{}]: {}", chapterId, e.getMessage());
+            throw e;
         }
-
-        // Fallback: If Jsoup yielded 0 images, attempt dynamic Selenium
-        if (imageUrls.isEmpty()) {
-            log.warn("Jsoup found 0 images for chapter [{}], falling back to Selenium Harvester", chapter.getSourceUrl());
-            imageUrls = seleniumHarvester.extractDynamicImageUrls(chapter.getSourceUrl(), template, manga.getCustomImageSelector());
-        }
-
-        broadcastProgress(chapterId, manga.getTitle(), chapter.getChapterNumber(), 40, "DOWNLOADING", 8);
-
-        // Construct target directory path: {vaultBasePath}/manga/{mangaTitle}/Chapter_{chapterNumber}
-        String sanitizedTitle = sanitizeFilename(manga.getTitle());
-        Path chapterDir = Paths.get(vaultBasePath, "manga", sanitizedTitle, "Chapter_" + chapter.getChapterNumber());
-
-        broadcastProgress(chapterId, manga.getTitle(), chapter.getChapterNumber(), 75, "DOWNLOADING", 8);
-
-        int downloadedCount = seleniumHarvester.downloadPagesConcurrently(imageUrls, chapterDir);
-
-        broadcastProgress(chapterId, manga.getTitle(), chapter.getChapterNumber(), 95, "PACKAGING_CBZ", 1);
-
-        Chapter savedChapter = mangaService.markChapterDownloaded(chapterId, chapterDir.toAbsolutePath().toString(), downloadedCount);
-
-        broadcastProgress(chapterId, manga.getTitle(), chapter.getChapterNumber(), 100, "COMPLETED", 0);
-        workspaceService.recordActivity("HARVESTER", "CHAPTER_HARVESTED",
-                "Harvested " + manga.getTitle() + " Chapter " + chapter.getChapterNumber() + " (" + downloadedCount + " pages)",
-                "MANGA", manga.getId());
-
-        return savedChapter;
     }
 
     /**
@@ -530,5 +573,23 @@ public class ScraperService {
         }
 
         return doc.outerHtml();
+    }
+
+    /**
+     * Generates a safe fallback ScraperTemplate for unknown or dynamic domains
+     * equipped with standard manga reader CSS selectors.
+     */
+    private ScraperTemplate createDefaultTemplate(String domain) {
+        log.info("No saved recipe for domain [{}], creating dynamic fallback template with standard selectors", domain);
+        ScraperTemplate t = new ScraperTemplate();
+        t.setName(domain);
+        t.setDomainName(domain);
+        t.setTitleSelector("h1.text-xl, h1, .entry-title, .series-title");
+        t.setChapterListSelector("div.pl-4 a, #chapterlist a, a[href*='/chapter/'], a[href*='/chapter-']");
+        t.setImageSelector("div[data-page] img, img[data-page-index], div.w-full img, #readerarea img, div#readerarea img");
+        t.setCoverImageSelector("img[alt='poster'], div.thumb img, img.wp-post-image");
+        t.setRequiresJs(false);
+        t.setRateLimitMs(1000);
+        return t;
     }
 }

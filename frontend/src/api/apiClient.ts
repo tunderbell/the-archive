@@ -389,4 +389,18 @@ export const apiClient = {
     if (!res.ok) throw new Error('Failed to open in external viewer');
     return res.json();
   },
+
+  /**
+   * Deletes a media entity from the SQLite vault by category and UUID.
+   */
+  async deleteMedia(category: string, id: string): Promise<void> {
+    let endpoint = '/api/manga/';
+    const cat = category.toUpperCase();
+    if (cat === 'ANIME') endpoint = '/api/anime/';
+    else if (cat === 'MUSIC') endpoint = '/api/music/';
+    else if (cat === 'GAMES' || cat === 'VIDEO_GAMES') endpoint = '/api/games/';
+
+    const res = await fetch(`${endpoint}${id}`, { method: 'DELETE' });
+    if (!res.ok) throw new Error(`Failed to delete media item: ${res.statusText}`);
+  },
 };

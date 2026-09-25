@@ -67,3 +67,6 @@ desktop.ini
 frontend/node_modules/
 frontend/dist/
 
+# Local Media Vault Storage
+archive_vault/
+

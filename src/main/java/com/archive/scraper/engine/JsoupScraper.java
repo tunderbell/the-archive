@@ -174,15 +174,42 @@ public class JsoupScraper {
         // Preference: Custom selector set on Manga takes precedence over global template
         String selector = (customImageSelector != null && !customImageSelector.isBlank())
                 ? customImageSelector
-                : template.getImageSelector();
+                : (template != null ? template.getImageSelector() : null);
 
-        Elements imgElements = doc.select(selector);
+        Elements imgElements = (selector != null && !selector.isBlank()) ? doc.select(selector) : new Elements();
         List<String> imageUrls = new ArrayList<>();
 
         for (Element img : imgElements) {
             String src = resolveImageSrc(img);
             if (src != null && !imageUrls.contains(src)) {
                 imageUrls.add(src);
+            }
+        }
+
+        // HEURISTIC FALLBACK: If configured selector found 0 images, probe standard manga reader containers
+        if (imageUrls.isEmpty()) {
+            String[] fallbacks = {
+                "div[data-page] img",
+                "img[data-page-index]",
+                "div.w-full img",
+                "#readerarea img",
+                "div#readerarea img",
+                ".reading-content img",
+                ".page-break img",
+                "div.separator img"
+            };
+            for (String fallbackSel : fallbacks) {
+                Elements fallbackImgs = doc.select(fallbackSel);
+                for (Element img : fallbackImgs) {
+                    String src = resolveImageSrc(img);
+                    if (src != null && !imageUrls.contains(src)) {
+                        imageUrls.add(src);
+                    }
+                }
+                if (!imageUrls.isEmpty()) {
+                    log.info("Extracted [{}] images using fallback selector [{}] from [{}]", imageUrls.size(), fallbackSel, chapterUrl);
+                    break;
+                }
             }
         }
 

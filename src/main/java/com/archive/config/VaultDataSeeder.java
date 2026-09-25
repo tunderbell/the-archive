@@ -69,27 +69,33 @@ public class VaultDataSeeder implements CommandLineRunner {
     }
 
     private void seedTemplatesIfEmpty() {
-        if (scraperService.getAllTemplates().isEmpty()) {
-            log.info("[VaultDataSeeder] Initializing default Scraper site recipes...");
-
+        boolean hasAsuraComic = scraperService.getAllTemplates().stream()
+                .anyMatch(t -> "asuracomic.net".equalsIgnoreCase(t.getDomainName()));
+        if (!hasAsuraComic) {
+            log.info("[VaultDataSeeder] Initializing Asura Comic site recipe...");
             ScraperTemplate t1 = new ScraperTemplate();
             t1.setName("Asura Comic");
             t1.setDomainName("asuracomic.net");
-            t1.setTitleSelector("span.text-xl, h1");
-            t1.setChapterListSelector("div.pl-4 a, #chapterlist a");
-            t1.setImageSelector("div#readerarea img, div.w-full img");
+            t1.setTitleSelector("span.text-xl, h1, .entry-title");
+            t1.setChapterListSelector("div.pl-4 a, #chapterlist a, a[href*='/chapter/'], a[href*='/chapter-']");
+            t1.setImageSelector("div[data-page] img, img[data-page-index], div.w-full img, #readerarea img, div#readerarea img");
             t1.setCoverImageSelector("img[alt='poster'], div.thumb img");
             t1.setRequiresJs(false);
             t1.setRateLimitMs(1000);
             scraperService.saveTemplate(t1);
+        }
 
+        boolean hasAsuraScans = scraperService.getAllTemplates().stream()
+                .anyMatch(t -> "asurascans.com".equalsIgnoreCase(t.getDomainName()));
+        if (!hasAsuraScans) {
+            log.info("[VaultDataSeeder] Initializing Asura Scans site recipe...");
             ScraperTemplate t2 = new ScraperTemplate();
             t2.setName("Asura Scans");
             t2.setDomainName("asurascans.com");
-            t2.setTitleSelector("h1.entry-title, .series-title");
-            t2.setChapterListSelector("#chapterlist li a");
-            t2.setImageSelector("#readerarea img, .page-break img");
-            t2.setCoverImageSelector(".thumb img");
+            t2.setTitleSelector("h1.text-xl, h1, .entry-title, .series-title");
+            t2.setChapterListSelector("div.pl-4 a, #chapterlist a, a[href*='/chapter/'], a[href*='/chapter-']");
+            t2.setImageSelector("div[data-page] img, img[data-page-index], div.w-full img, #readerarea img, div#readerarea img");
+            t2.setCoverImageSelector("img[alt='poster'], div.thumb img");
             t2.setRequiresJs(false);
             t2.setRateLimitMs(1000);
             scraperService.saveTemplate(t2);
