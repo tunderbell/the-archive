@@ -99,13 +99,7 @@ export const MediaVaultBuffer: React.FC = () => {
       if (data && data.length > 0) {
         setItems(data);
       } else {
-        // Sample fallback if backend is offline
-        setItems([
-          { id: 'm-1', category: 'MANGA', title: 'Solo Leveling', creatorOrAuthor: 'Chugong', status: 'COMPLETED', count: '179 ch', visibility: 'WORKSPACE', description: 'In a world where hunters must battle deadly monsters, weak hunter Sung Jinwoo discovers a quest log that only he can see.' },
-          { id: 'm-2', category: 'MANGA', title: 'Berserk', creatorOrAuthor: 'Kentaro Miura', status: 'READING', count: '375 ch', visibility: 'PRIVATE', description: 'Guts, a former mercenary now known as the Black Swordsman, is out for revenge.' },
-          { id: 'a-1', category: 'ANIME', title: 'Cowboy Bebop', creatorOrAuthor: 'Shinichiro Watanabe', status: 'FINISHED', count: '1998', visibility: 'PRIVATE', description: 'The futuristic misadventures of an easygoing bounty hunter and his partners.' },
-          { id: 'g-1', category: 'GAMES', title: 'Elden Ring', creatorOrAuthor: 'FromSoftware', status: 'PLAYING', count: '2022', visibility: 'WORKSPACE', description: 'Rise, Tarnished, and be guided by grace to brandish the power of the Elden Ring.' },
-        ]);
+        setItems([]);
       }
     } catch {
       setItems([]);

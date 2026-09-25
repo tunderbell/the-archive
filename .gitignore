@@ -45,6 +45,7 @@ application-local.yaml
 # Personal notes / spec
 projectNotes/
 projectspec.md
+agent_notes/
 
 # OS
 .DS_Store

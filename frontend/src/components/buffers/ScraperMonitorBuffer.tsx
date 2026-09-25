@@ -291,28 +291,9 @@ export const ScraperMonitorBuffer: React.FC = () => {
       });
       setTestResults(results);
       setWizardStatus({ text: `Test completed! Matched ${results.chapterCount} chapters & ${results.imageCount} images.` });
-    } catch {
-      // Demonstrative live preview fallback
-      const demoResult: TestSelectorResponse = {
-        domain: wizardDomain || 'asuracomic.net',
-        url: wizardUrl,
-        title: 'Solo Leveling (Tested)',
-        chapterCount: 179,
-        sampleChapters: [
-          { title: 'Chapter 179 - Epilogue', url: `${wizardUrl}/chapter-179` },
-          { title: 'Chapter 178', url: `${wizardUrl}/chapter-178` },
-          { title: 'Chapter 177', url: `${wizardUrl}/chapter-177` },
-        ],
-        imageCount: 42,
-        sampleImages: [
-          'https://images.unsplash.com/photo-1578632767115-351597cf2477?w=400&auto=format&fit=crop&q=60',
-          'https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?w=400&auto=format&fit=crop&q=60',
-          'https://images.unsplash.com/photo-1534447677768-be436bb09401?w=400&auto=format&fit=crop&q=60',
-          'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=400&auto=format&fit=crop&q=60',
-        ],
-      };
-      setTestResults(demoResult);
-      setWizardStatus({ text: `Preview generated: 42 images & 179 chapters matched.` });
+    } catch (err: any) {
+      setTestResults(null);
+      setWizardStatus({ text: `Selector test failed: ${err?.message || 'Server error or target unreachable'}`, error: true });
     } finally {
       setIsTesting(false);
     }
