@@ -12,9 +12,6 @@ bin/
 .settings/
 .factorypath
 
-# Comic content
-.archive_vault/
-
 # IntelliJ
 .idea/
 *.iml
@@ -73,5 +70,7 @@ frontend/dist/
 
 # Local Media Vault Storage (Downloaded Chapters & CBZs)
 archive_vault/
+
+presentation/
 
 
