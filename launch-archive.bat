@@ -12,7 +12,7 @@ echo.
 set STARTED_BACKEND=0
 
 :: Check if backend is already listening on port 61069
-powershell -NoProfile -Command "if ((Get-NetTCPConnection -LocalPort 61069 -State Listen -ErrorAction SilentlyContinue).Count -gt 0) { exit 0 } else { exit 1 }"
+powershell -NoProfile -Command "if (Get-NetTCPConnection -LocalPort 61069 -State Listen -ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }"
 if %ERRORLEVEL% equ 0 (
     echo [*] Backend engine is already active on port 61069.
     goto launch_electron
@@ -31,7 +31,7 @@ if %attempts% gtr 45 (
     goto launch_electron
 )
 timeout /t 2 /nobreak >nul
-powershell -NoProfile -Command "if ((Get-NetTCPConnection -LocalPort 61069 -State Listen -ErrorAction SilentlyContinue).Count -gt 0) { exit 0 } else { exit 1 }"
+powershell -NoProfile -Command "if (Get-NetTCPConnection -LocalPort 61069 -State Listen -ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }"
 if %ERRORLEVEL% neq 0 (
     echo     Waiting for port 61069... (!attempts!/45)
     goto wait_loop

@@ -11,6 +11,7 @@
 
 const { app, BrowserWindow } = require('electron');
 const path = require('path');
+const http = require('http');
 
 function createWindow() {
   const mainWindow = new BrowserWindow({
@@ -33,10 +34,16 @@ function createWindow() {
     mainWindow.show();
   });
 
-  // Prefer the active Vite dev server (port 3000) for instant HMR
-  const devServerUrl = 'http://localhost:3000';
-  mainWindow.loadURL(devServerUrl).catch(() => {
-    // Fallback to local production build
+  // Check if active Vite dev server is running without triggering Chromium console warnings
+  const devReq = http.get('http://localhost:3000', () => {
+    mainWindow.loadURL('http://localhost:3000');
+  });
+  devReq.on('error', () => {
+    // Production build mode: load compiled dist/index.html directly
+    mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
+  });
+  devReq.setTimeout(400, () => {
+    devReq.destroy();
     mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
   });
 }
