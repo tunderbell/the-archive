@@ -40,7 +40,8 @@ application-local.yaml
 *.sqlite
 *.sqlite3
 *.db-journal
-
+*.db-wal
+*.db-shm
 
 # Personal notes / spec
 projectNotes/
@@ -51,6 +52,7 @@ agent_notes/
 .DS_Store
 Thumbs.db
 desktop.ini
+*.lnk
 
 # Env / secrets
 .env
@@ -67,6 +69,7 @@ desktop.ini
 **/dist/
 frontend/node_modules/
 frontend/dist/
+**/.vite/
 
 # Local Media Vault Storage (Downloaded Chapters & CBZs)
 archive_vault/
